@@ -1,0 +1,130 @@
+# product.yaml reference
+
+`products/<product>/product.yaml` defines the whole product. Each component
+is one deployable piece with its own code folder next to the file.
+
+```yaml
+product: orders            # 2-10 chars, [a-z][a-z0-9]*, prefixes every name
+team: commerce
+envs: [dev, prod]          # subset of platform.yaml envs; one Atlantis project each
+# region: us-central1      # default: platform.yaml region
+# projects: { dev: legacy-orders-dev }   # default: {org}-{product}-{env}
+# labels: { cost-center: cc-123 }
+
+components:
+  <name>:                  # 1-15 chars, [a-z0-9-]; also the code folder name
+    kind: web | api | job | worker | function
+    template: nextjs       # which scaffold `cdk add` used (informational)
+    ...settings for that kind...
+
+overrides:                 # per-env, per-component, shallow merge
+  prod:
+    backend: { min_instances: 2 }
+```
+
+## Kinds
+
+| kind | Becomes | Templates | Typical use |
+|---|---|---|---|
+| `web` | Cloud Run service | `nextjs`, `react` | frontends (Next.js SSR, React SPA via nginx) |
+| `api` | Cloud Run service | `fastapi` | backends, internal by default |
+| `job` | Cloud Run job (+ Scheduler) | `python-job` | batch, cron, run-to-completion |
+| `worker` | Cloud Run worker pool | `python-worker` | always-on queue/stream consumers |
+| `function` | Cloud Run function (+ Eventarc) | `python-function` | react to GCS / Pub/Sub / audit-log events |
+
+Resource and service account name: `{product}-{name}-{svc|job|wp|fn}`.
+See [CONVENTIONS.md](CONVENTIONS.md).
+
+## Settings
+
+**Every kind**
+
+| key | example | notes |
+|---|---|---|
+| `env` | `{ LOG_LEVEL: debug }` | `ENV`, `PRODUCT`, `COMPONENT` are always set |
+| `secret_env` | `{ DB_URL: orders-db-url }`, `"name:3"` pins a version | accessor on the secret is granted automatically |
+| `cpu`, `memory` | `"2"`, `1Gi` | defaults `1`, `512Mi` |
+| `access` | see below | resource-level IAM for this component's SA |
+| `calls` | `[backend]` | see *Calling other components* |
+| `use_vpc` | `false` | opt out of the env's VPC egress |
+
+**web / api** add `public`, `port` (8080), `min_instances` (0), `max_instances` (10), `concurrency` (80),
+`timeout` (`300s`), `cpu_idle` (true), `ingress`, `invokers`, `image`, `command`, `args`.
+
+**job** adds `task_count`, `parallelism`, `max_retries`, `timeout` (`600s`), `command`, `args`,
+`schedules`:
+
+```yaml
+schedules:
+  daily:  { cron: "0 2 * * *", time_zone: Europe/Berlin }
+  weekly: { cron: "0 4 * * 0", args: ["--full"] }     # args override for this schedule
+```
+
+**worker** adds `instances` (1), `command`, `args`.
+
+**function** adds `public`, `min_instances`, `max_instances`, `concurrency` (1), `timeout`, `invokers`,
+`triggers`:
+
+```yaml
+triggers:
+  upload:
+    event_type: google.cloud.storage.object.v1.finalized
+    filters: { bucket: "acme-orders-inbox-{env}" }
+  events:
+    event_type: google.cloud.pubsub.topic.v1.messagePublished
+    pubsub_topic: "projects/{project}/topics/orders-events"
+```
+
+Unknown keys fail the plan with the component and key named, so typos don't slip through.
+
+## access
+
+```yaml
+access:
+  secrets: [orders-api-key, "projects/shared/secrets/x"]   # secretAccessor
+  buckets: { "acme-orders-exports-{env}": write }           # read | write | admin
+  publish: [orders-events]                                  # pubsub.publisher on topic
+  subscribe: [orders-email-requests]                        # pubsub.subscriber on subscription
+  bigquery_datasets: { orders_analytics: write }            # read | write; "proj:dataset" cross-project
+  project_roles: []                                         # escape hatch, reviewed
+```
+
+## Calling other components
+
+```yaml
+storefront:
+  kind: web
+  calls: [backend]        # storefront's SA gets run.invoker on backend; BACKEND_URL is injected
+```
+
+The URL is Cloud Run's deterministic URL, so two components can call each other
+without a dependency cycle. The caller must send a Google ID token for that URL
+(standard Cloud Run service-to-service auth). A **browser** can't do that, so a
+React SPA calling an API directly needs that API to be `public: true`, or a
+load balancer in front.
+
+For callers outside the product: `invokers: ["serviceAccount:x@other.iam.gserviceaccount.com"]`.
+
+## Placeholders
+
+`{env}`, `{project}`, `{product}` are substituted anywhere in component settings:
+
+```yaml
+buckets: { "acme-orders-exports-{env}": write }
+env: { SUBSCRIPTION: "projects/{project}/subscriptions/orders-email" }
+```
+
+## Public endpoints
+
+`public: true` sets ingress to all traffic and grants `allUsers` invoker. If your
+org enforces Domain Restricted Sharing, the platform team needs an exception or
+a load balancer with IAP instead.
+
+## Changing components
+
+| Change | Do | Then |
+|---|---|---|
+| add | `tools/cdk add orders job cleanup` | PR → Atlantis plan creates SA + job; merge → Drone deploys code |
+| remove | `tools/cdk remove orders cleanup` | PR → Atlantis plan destroys it (prod: deletion protection must be lifted for that apply) |
+| change settings | edit product.yaml | PR → Atlantis plan |
+| change code | edit the component folder | merge → Drone builds & deploys only that component |

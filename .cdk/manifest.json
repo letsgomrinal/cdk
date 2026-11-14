@@ -1,0 +1,51 @@
+{
+  "build_project": "acme-cicd",
+  "products": {
+    "orders": {
+      "components": {
+        "backend": {
+          "kind": "api",
+          "path": "products/orders/backend",
+          "type": "service",
+          "workload": "orders-backend-svc"
+        },
+        "email-sender": {
+          "kind": "worker",
+          "path": "products/orders/email-sender",
+          "type": "worker-pool",
+          "workload": "orders-email-sender-wp"
+        },
+        "gcs-ingest": {
+          "kind": "function",
+          "path": "products/orders/gcs-ingest",
+          "type": "function",
+          "workload": "orders-gcs-ingest-fn"
+        },
+        "nightly-export": {
+          "kind": "job",
+          "path": "products/orders/nightly-export",
+          "type": "job",
+          "workload": "orders-nightly-export-job"
+        },
+        "reconcile": {
+          "kind": "job",
+          "path": "products/orders/reconcile",
+          "type": "job",
+          "workload": "orders-reconcile-job"
+        },
+        "storefront": {
+          "kind": "web",
+          "path": "products/orders/storefront",
+          "type": "service",
+          "workload": "orders-storefront-svc"
+        }
+      },
+      "projects": {
+        "dev": "acme-orders-dev",
+        "prod": "acme-orders-prod"
+      },
+      "region": "europe-west1"
+    }
+  },
+  "registry": "europe-west1-docker.pkg.dev/acme-artifacts/products"
+}

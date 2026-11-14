@@ -1,6 +1,6 @@
-# Cloud Run function (formerly Cloud Functions gen2): a Cloud Run service whose
-# code Drone deploys from source with `gcloud run deploy --source . --function <entry>`,
-# plus Eventarc triggers that deliver events to it.
+# Cloud Run function (formerly Cloud Functions gen2): a Cloud Run service running
+# a Functions Framework container (built from the component's Dockerfile like any
+# other component), plus Eventarc triggers that deliver events to it.
 #
 # The trigger runs as the function's own SA. That SA gets:
 #   - roles/run.invoker on this function only

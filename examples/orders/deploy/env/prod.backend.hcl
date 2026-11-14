@@ -1,1 +1,0 @@
-bucket = "acme-tfstate-prod"

@@ -1,11 +1,17 @@
-# CI for the kit itself: formatting, offline module tests (mocked provider),
-# and checks that the example unit and the generated Atlantis config are valid.
+# Shared CI/CD for every product in the monorepo. Products don't have their own
+# pipelines: `tools/cdk release` works out which components changed and ships only those.
+#
+#   PR / push           -> checks (fmt, module tests, generated files up to date)
+#   push to main        -> build changed components (Cloud Build) -> deploy to dev
+#   drone promote prod  -> deploy the images running in dev to prod (no rebuild)
+#                          optional: -p PRODUCTS=orders,billing  -p COMPONENTS=orders/backend
+---
 kind: pipeline
 type: docker
-name: cdk
+name: checks
 
 trigger:
-  event: [push, pull_request, tag]
+  event: [push, pull_request, promote]
 
 steps:
   - name: fmt
@@ -13,20 +19,52 @@ steps:
     commands:
       - terraform fmt -recursive -check -diff
 
-  - name: test-modules
+  - name: module-tests
     image: hashicorp/terraform:1.17
     commands:
       - |
-        for m in modules/product modules/workload-identity; do
+        for m in modules/product-spec modules/product modules/workload-identity; do
           (cd $m && terraform init -input=false -backend=false && terraform test) || exit 1
         done
 
-  - name: validate-example
-    image: hashicorp/terraform:1.17
-    commands:
-      - cd examples/orders/deploy && terraform init -input=false -backend=false && terraform validate
-
-  - name: atlantis-config
+  - name: generated-files
     image: python:3.13-slim
     commands:
-      - python3 tools/gen-atlantis.py --check examples/orders
+      - pip install --quiet ruamel.yaml
+      - python3 tools/cdk sync --check
+
+---
+kind: pipeline
+type: docker
+name: release
+
+trigger:
+  event: [push, promote]
+
+steps:
+  - name: release-dev
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    environment:
+      RELEASE_KEY:
+        from_secret: drone_release_key   # drone-release@acme-cicd
+    commands:
+      - echo "$RELEASE_KEY" > /tmp/key.json && gcloud auth activate-service-account --key-file=/tmp/key.json
+      - git fetch --quiet --unshallow || true   # needs history to diff against DRONE_COMMIT_BEFORE; otherwise everything is released
+      - python3 tools/cdk release dev
+    when:
+      event: push
+      branch: main
+
+  - name: promote-prod
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    environment:
+      RELEASE_KEY:
+        from_secret: drone_release_key
+    commands:
+      - echo "$RELEASE_KEY" > /tmp/key.json && gcloud auth activate-service-account --key-file=/tmp/key.json
+      - python3 tools/cdk promote dev prod
+    when:
+      event: promote
+      target: prod
+
+depends_on: [checks]
