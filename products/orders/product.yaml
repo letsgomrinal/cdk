@@ -1,0 +1,67 @@
+# Infra for product "orders". This file is the whole definition:
+# add/remove components here (or with `tools/cdk add|remove`), then run `tools/cdk sync`.
+# Reference: docs/PRODUCT_YAML.md
+product: orders
+team: commerce
+envs: [dev, prod]
+
+components:
+  storefront:
+    kind: web
+    template: nextjs
+    public: true          # internet-facing; delete this line to keep it internal
+    calls: [backend]      # may invoke `backend`; its URL is injected as BACKEND_URL
+
+  backend:
+    kind: api
+    template: fastapi
+    memory: 1Gi
+    secret_env: { DB_URL: orders-db-url }    # access to the secret is granted automatically
+    access: { publish: [orders-events] }
+
+  nightly-export:
+    kind: job
+    template: python-job
+    args: [export]
+    secret_env: { DB_URL: orders-db-url }
+    schedules:
+      daily: { cron: "0 2 * * *", time_zone: Europe/Berlin }
+    access:
+      buckets: { "acme-orders-exports-{env}": write }
+      bigquery_datasets: { orders_analytics: write }
+
+  reconcile:
+    kind: job
+    template: python-job
+    task_count: 4
+    calls: [backend]
+    schedules:
+      hourly: { cron: "15 * * * *" }
+      weekly: { cron: "0 4 * * 0", args: ["--full"] }
+
+  email-sender:
+    kind: worker
+    template: python-worker
+    instances: 1
+    env: { SUBSCRIPTION: "projects/{project}/subscriptions/orders-email-requests" }
+    secret_env: { SMTP_PASSWORD: "orders-smtp-password:3" }
+    access:
+      subscribe: [orders-email-requests]
+      buckets: { acme-orders-templates: read }
+
+  gcs-ingest:
+    kind: function
+    template: python-function
+    access:
+      buckets: { "acme-orders-inbox-{env}": read }
+      publish: [orders-events]
+    triggers:
+      upload:
+        event_type: google.cloud.storage.object.v1.finalized
+        filters: { bucket: "acme-orders-inbox-{env}" }
+
+# Per-env tweaks, shallow-merged into a component's settings:
+overrides:
+  prod:
+    backend: { min_instances: 2 }
+    email-sender: { instances: 4 }

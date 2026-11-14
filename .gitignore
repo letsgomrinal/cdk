@@ -3,6 +3,8 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
-.terraform.lock.hcl
 crash.log
 __pycache__/
+node_modules/
+.next/
+dist/

@@ -1,109 +1,101 @@
-# cdk: serverless deployment kit for GCP
+# cdk: serverless products on GCP
 
-Terraform modules and a unit template for deploying **Cloud Run services, jobs,
-worker pools and Cloud Run functions**, with consistent naming, one service
-account per workload, and resource-level IAM. Infra goes through **Atlantis**;
-releases go through **Drone**.
+A monorepo kit for products made of **web frontends, APIs, background jobs,
+worker pools and functions** on Cloud Run. Each product has one
+`product.yaml` that lists its components; shared tooling at the repo root
+covers everything else (Terraform, Atlantis, Drone, release).
 
-```hcl
-module "orders" {
-  source = "git::https://github.com/letsgomrinal/cdk.git//modules/product?ref=v0.1.0"
-
-  product    = "orders"
-  team       = "commerce"
-  env        = var.env
-  project_id = var.project_id
-  region     = var.region
-  deployers  = ["serviceAccount:drone-release@acme-cicd.iam.gserviceaccount.com"]
-
-  services     = { api = { secret_env = { DB_URL = "orders-db-url" }, invokers = ["job/reconcile"] } }
-  jobs         = { reconcile = { schedules = { hourly = { cron = "15 * * * *" } } } }
-  worker_pools = { email-sender = { access = { subscribe = ["orders-email-sub"] } } }
-  functions    = {}   # use only the types you need
-}
+```
+$ tools/cdk new orders
+Owning team: commerce
+Environments [dev,prod]:
+Web frontend? (nextjs / react / no) [no]: nextjs
+  name [web]: storefront
+API backend? (fastapi / no) [no]: fastapi
+  name [api]: backend
+Background jobs? names, comma-separated [none]: nightly-export, reconcile
+Worker pools? names, comma-separated [none]: email-sender
+Functions? names, comma-separated [none]:
 ```
 
-This creates `orders-api-svc`, `orders-reconcile-job` and `orders-email-sender-wp`.
-Each runs as a service account with the same name, which can access only
-the secret, subscription or service it was given.
+```
+$ tools/cdk list
+orders  (commerce; envs: dev, prod)  products/orders
+  storefront       web       -> service      orders-storefront-svc
+  backend          api       -> service      orders-backend-svc
+  nightly-export   job       -> job          orders-nightly-export-job
+  reconcile        job       -> job          orders-reconcile-job
+  email-sender     worker    -> worker-pool  orders-email-sender-wp
+```
 
 ## Layout
 
 ```
-modules/
-  product/                # entry point: maps of services / jobs / worker_pools / functions
-  naming/                 # the naming convention (pure, no resources)
-  workload-identity/      # SA per workload + resource-level IAM grants
-  cloud-run-service/
-  cloud-run-job/          # + Cloud Scheduler
-  cloud-run-worker-pool/
-  cloud-function/         # Cloud Run service + Eventarc triggers
-templates/product/        # copier template for a new product unit
-examples/orders/          # a complete unit: 1 service, 2 jobs, 1 worker pool, 1 function
-atlantis/repos.yaml       # server-side Atlantis workflow "cdk"
-tools/gen-atlantis.py     # builds atlantis.yaml from unit.yaml files
-docs/CONVENTIONS.md       # naming, labels, IAM, ownership: read this
+platform.yaml               shared settings: org, region, registry, deployers, per-env state bucket + VPC
+products/
+  orders/
+    product.yaml            ← the only file product teams edit for infra
+    storefront/  backend/  nightly-export/  …      one folder per component (code + Dockerfile)
+    deploy/                 generated: main.tf + backend.<env>.hcl
+tools/cdk                   CLI: new / add / remove / list / sync / release / promote
+templates/components/       scaffolds: nextjs, react, fastapi, python-job, python-worker, python-function
+modules/                    Terraform: product-spec (reads product.yaml) → product → per-type modules
+atlantis.yaml               generated: one project per product × env
+atlantis/repos.yaml         server-side Atlantis workflow
+.drone.yml                  one shared pipeline: checks, release to dev, promote to prod
+.cdk/manifest.json          generated inventory used by release
+docs/PRODUCT_YAML.md        product.yaml reference
+docs/CONVENTIONS.md         naming, IAM, ownership
 ```
 
-## Creating a product
+## Day to day
 
 ```bash
-pipx install copier
-```
-
-```bash
-copier copy --vcs-ref v0.1.0 https://github.com/letsgomrinal/cdk.git services/billing
+pip install ruamel.yaml          # or prefix commands with `uv run`
 ```
 
 ```bash
-tools/gen-atlantis.py . > atlantis.yaml
+tools/cdk add orders api search --template fastapi
 ```
 
-Copier prompts for product code, team, envs and region, and validates the
-product code. Later template changes come in with `copier update --vcs-ref v0.2.0`.
-
-## Micro repo or monorepo
-
-A unit is self-contained, so the same folder works in either setup:
-
-```
-billing/  (micro repo)                 platform/  (monorepo)
-├── unit.yaml                          ├── atlantis.yaml   ← generated from all unit.yaml
-├── atlantis.yaml   ← generated        ├── .drone.star     ← one pipeline per changed unit
-├── .drone.yml                         ├── services/billing/   (same folder as left)
-└── deploy/ …                          ├── services/orders/
-                                       └── jobs/reporting/
+```bash
+tools/cdk remove orders reconcile
 ```
 
-* **Atlantis:** Atlantis reads only the repo-root `atlantis.yaml`, so generate
-  it with `tools/gen-atlantis.py`. In CI, `--check` fails the build if it's stale.
-  Project names are `{product}-{env}`, so they're unique across a monorepo.
-* **Drone:** in a micro repo the unit's `.drone.yml` is used as-is. In a monorepo,
-  Drone has no built-in path filtering. Use a `.drone.star` that emits one pipeline
-  per unit (the unit's steps, run with that unit as the working directory), plus the
-  [paths-changed converter](https://github.com/meltwater/drone-convert-pathschanged)
-  so only changed units build.
-* **Kit versions:** each unit pins its own `?ref=`, so units in a monorepo
-  upgrade independently.
-
-## Infra vs releases
-
-```
-PR touching deploy/  ──► Atlantis plan (per env) ──► approve ──► atlantis apply
-merge to main        ──► Drone: build image once ──► release.sh → dev
-drone promote prod   ──► Drone: same image        ──► release.sh → prod
+```bash
+tools/cdk sync
 ```
 
-Terraform ignores the container image, so the two paths never conflict. See
-[docs/CONVENTIONS.md §5](docs/CONVENTIONS.md#5-who-owns-what).
+`add` updates `product.yaml`, copies the template into
+`products/orders/search/` and re-syncs. Edit `product.yaml` by hand whenever
+you like, then run `tools/cdk sync`. CI fails if you forget.
 
-## Atlantis setup
+## How changes flow
 
-Load `atlantis/repos.yaml` as the server-side repo config. For each project it:
+```
+edit product.yaml ─► PR ─► Atlantis plans orders-dev, orders-prod ─► approve ─► atlantis apply
+edit component code ─► merge ─► Drone: `cdk release dev`  (builds + deploys only changed components)
+drone promote <build> prod ─► `cdk promote dev prod`  (deploys the exact images running in dev)
+```
 
-* uses `TF_DATA_DIR=.terraform-<env>`, so parallel dev/prod plans in the same dir don't collide
-* inits with `env/<env>.backend.hcl` (a separate state bucket per env)
-* plans with `env/<env>.tfvars`
+* **Nothing is per product.** One Drone pipeline and one Atlantis workflow
+  serve every product. `cdk release` maps changed files to components, builds
+  each with Cloud Build into `{registry}/{product}/{component}:{sha}`, and
+  updates the right Cloud Run resource.
+* **Promotion never rebuilds.** It reads the image each workload runs in dev
+  and deploys that image to prod. Narrow it with `-p PRODUCTS=orders` or
+  `-p COMPONENTS=orders/backend`.
+* **Terraform ignores the image**, so infra applies and code releases never
+  overwrite each other.
+
+## Setup (once, by the platform team)
+
+1. Fill in `platform.yaml`.
+2. Create what it references: per-env state buckets, the Artifact Registry
+   repo, the `drone-release` SA, per-product projects. See
+   [CONVENTIONS.md §5](docs/CONVENTIONS.md#5-who-owns-what).
+3. Run Atlantis with `--repo-config=atlantis/repos.yaml`.
+4. Add the Drone secret `drone_release_key`.
 
 ## Developing the kit
 
@@ -112,12 +104,9 @@ terraform fmt -recursive
 ```
 
 ```bash
-cd modules/product && terraform init -backend=false && terraform test
+cd modules/product-spec && terraform init -backend=false && terraform test
 ```
 
-Tests use a mocked provider, so they need no GCP credentials. They check names,
-generated grants, and that invalid input (long names, unknown invoker refs,
-basic roles) is rejected. Requires Terraform ≥ 1.7 for tests (modules need ≥ 1.6)
-and google provider ≥ 8.0 (worker pools); developed against 8.11.
-
-Release: tag `vX.Y.Z`. Units bump `?ref=` and `kit_version` in `unit.yaml`.
+Module tests use a mocked provider and need no GCP access. Requires Terraform
+≥ 1.7 for tests (≥ 1.6 to run), google provider ≥ 8.0 (developed against 8.11),
+Python ≥ 3.9.

@@ -8,17 +8,19 @@ code-review rule.
 
 | Term | Meaning | Example |
 |---|---|---|
-| **product** | The deployable unit: one folder, one Terraform root, one Drone pipeline | `orders` |
-| **workload** | One runnable thing inside a product | `nightly-export` |
-| **type** | `service`, `job`, `worker-pool`, `function` | `job` |
+| **product** | One folder `products/<product>/` with one `product.yaml`, and one Terraform state per env | `orders` |
+| **component** | One deployable piece of a product: a code folder + one Cloud Run resource (a.k.a. workload) | `nightly-export` |
+| **kind** | What the team picks: `web`, `api`, `job`, `worker`, `function` | `job` |
+| **type** | The Cloud Run resource: `service`, `job`, `worker-pool`, `function` | `job` |
 | **env** | `dev`, `staging`, `prod`. **One GCP project per product per env** | `acme-orders-prod` |
 
-A product can contain any mix of types, and any number of workloads of each type.
+A product can contain any mix of kinds, and any number of components of each kind.
+`web` and `api` both become Cloud Run services; they differ in template and defaults.
 
 ## 2. Names
 
 ```
-{product}-{workload}-{type_code}        type_code: svc | job | wp | fn
+{product}-{component}-{type_code}        type_code: svc | job | wp | fn
 ```
 
 The same string is used for:
@@ -31,14 +33,14 @@ The same string is used for:
 | Eventarc triggers | `orders-gcs-ingest-fn-{trigger}` e.g. `…-fn-upload` |
 | Atlantis project | `{product}-{env}` e.g. `orders-prod` |
 | Terraform state | `gs://{org}-tfstate-{env}/products/{product}/default.tfstate` |
-| Image | `{region}-docker.pkg.dev/{org}-artifacts/products/{product}:{sha12}` |
+| Image | `{registry}/{product}/{component}:{sha12}` |
 
 Rules:
 
 * **product**: `^[a-z][a-z0-9]{1,9}$`, 2–10 chars, **no hyphens**. Since it never
   contains a hyphen, the first `-` in a name always ends the product, so names
-  parse cleanly (`${PROJECT_NAME%%-*}`, `release.sh`).
-* **workload**: `^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$`, 1–15 chars.
+  parse cleanly.
+* **component**: `^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$`, 1–15 chars.
 * 10 + 1 + 15 + 1 + 3 = **30**, exactly the service account ID limit. Any name
   that passes validation therefore fits, so the kit never truncates or hashes a name.
   Audit logs show `orders-nightly-export-job@…` and you know exactly what it is.
@@ -61,29 +63,25 @@ Applied to every resource and revision:
 | `team` | `commerce` |
 | `managed-by` | `terraform` |
 
-The release script uses `product` + `workload-type` to find what to deploy.
 Billing exports can group cost by `product`, `team` and `workload`.
 
 ## 4. Identity & IAM
 
 **One service account per workload. Never shared, never the default compute SA.**
 
-Each workload declares what it needs, and the kit grants it on that single resource:
+Each component declares what it needs in `product.yaml`, and the kit grants it on that single resource:
 
-```hcl
-jobs = {
-  nightly-export = {
-    secret_env = { DB_URL = "orders-db-url" }        # accessor on this secret is granted automatically
-    access = {
-      secrets           = ["orders-api-key"]         # roles/secretmanager.secretAccessor  (secret)
-      buckets           = { "orders-exports" = "write" }
-      publish           = ["orders-events"]          # roles/pubsub.publisher              (topic)
-      subscribe         = ["orders-email-sub"]       # roles/pubsub.subscriber             (subscription)
-      bigquery_datasets = { "orders_analytics" = "write" }
-      project_roles     = []                         # escape hatch, needs a reason in review
-    }
-  }
-}
+```yaml
+nightly-export:
+  kind: job
+  secret_env: { DB_URL: orders-db-url }          # accessor on this secret is granted automatically
+  access:
+    secrets: [orders-api-key]                    # roles/secretmanager.secretAccessor  (secret)
+    buckets: { "acme-orders-exports-{env}": write }
+    publish: [orders-events]                     # roles/pubsub.publisher              (topic)
+    subscribe: [orders-email-sub]                # roles/pubsub.subscriber             (subscription)
+    bigquery_datasets: { orders_analytics: write }
+    project_roles: []                            # escape hatch, needs a reason in review
 ```
 
 | `access` key | Mode | Role | Scope |
@@ -112,15 +110,9 @@ Cross-project resources take full IDs: `projects/shared/secrets/x`, `projects/p/
 
 ### Calling one workload from another
 
-**The called workload owns the grant.** A service lists who may call it:
-
-```hcl
-services = {
-  api = { invokers = ["job/reconcile", "serviceAccount:x@other.iam.gserviceaccount.com"] }
-}
-```
-
-`<type>/<name>` refers to a workload in the same product. A typo fails the plan.
+Inside a product, the caller declares it: `calls: [backend]` gives the caller's SA
+`run.invoker` on `backend` and injects `BACKEND_URL`. A caller from outside the
+product goes in the target's `invokers: ["serviceAccount:…"]`. Unknown names fail the plan.
 
 ### All IAM is additive
 
@@ -129,47 +121,33 @@ can't remove grants managed by other stacks.
 
 ## 5. Who owns what
 
-| | Owner | Tool | Changes via |
+| | Owner | Where | Changes via |
 |---|---|---|---|
-| Projects, VPC, state buckets, Artifact Registry, Drone release SA, secret containers | Platform | foundation stack (not this kit) | Atlantis |
-| Workload config: scaling, env, IAM, schedules, triggers | Product team | `modules/product` | PR → Atlantis plan/apply |
-| Code / image | Product team | Drone + `deploy/release.sh` | merge to main → dev, `drone promote` → prod |
+| Projects, VPC, state buckets, Artifact Registry, Drone release SA, secret containers | Platform | foundation stack (not this kit), described in `platform.yaml` | Atlantis |
+| Components and their config: scaling, env, IAM, schedules, triggers | Product team | `products/<p>/product.yaml` | PR → Atlantis plan/apply |
+| Code | Product team | `products/<p>/<component>/` | merge → `cdk release dev`; `drone promote` → `cdk promote dev prod` |
+| CI/CD, Atlantis workflow, modules, templates | Platform | repo root | PR |
 
 The Cloud Run modules have `ignore_changes` on the container image, so Atlantis
 applies never roll back a release, and releases never need an Atlantis run.
 
 ### What the foundation must provide
 
-* One project per product per env: `{org}-{product}-{env}`
-* State bucket per env: `{org}-tfstate-{env}`, writable by the Atlantis SA
-* Artifact Registry `{org}-artifacts/products`, which runtime SAs can read
-  (Cloud Run pulls images with the service agent, so grant
-  `artifactregistry.reader` to each env project's Cloud Run service agent)
-* Drone release SA `drone-release@{org}-cicd`, with Cloud Build + source bucket
-  permissions in each project if you deploy functions from source
+* One project per product per env: `{org}-{product}-{env}` (or listed under `projects:` in product.yaml)
+* State bucket per env (`platform.yaml: envs.<env>.state_bucket`), writable by the Atlantis SA
+* Artifact Registry at `platform.yaml: registry`. Grant `artifactregistry.reader` to each
+  product project's Cloud Run service agent so it can pull images.
+* `platform.yaml: build_project` with Cloud Build enabled. The Drone release SA can submit builds there and push to the registry.
 * For GCS-triggered functions: `pubsub.publisher` for the project's GCS service agent
 * Secret *containers* (values are set out-of-band; Terraform never sees secret values)
 
-## 6. Unit layout and portability
+## 6. Repo rules
 
-```
-<product>/
-├── unit.yaml              # product, team, kit_version, envs
-├── atlantis.yaml          # standalone repos only (generated)
-├── .drone.yml             # standalone repos only
-├── Dockerfile  src/  functions/<name>/
-└── deploy/
-    ├── versions.tf        # backend prefix = products/<product>
-    ├── main.tf            # module "product" { source = "git::…?ref=vX.Y.Z" }
-    ├── variables.tf
-    ├── release.sh
-    └── env/<env>.tfvars  env/<env>.backend.hcl
-```
-
-What makes the folder portable (it moves between a micro repo and a monorepo unchanged):
-
-1. **No `../` outside the unit.** The kit is pinned by git ref.
-2. **State is keyed by product, not repo path.**
-3. **Atlantis config is generated** from `unit.yaml` (`tools/gen-atlantis.py`),
-   because Atlantis reads one `atlantis.yaml` per repo.
-4. **Release discovers workloads by label**, so no repo-specific lists.
+1. **Product teams edit `product.yaml` and their component folders. Nothing else.**
+   `deploy/`, `atlantis.yaml` and `.cdk/manifest.json` are generated by `tools/cdk sync`;
+   CI runs `sync --check`.
+2. **One component = one folder = one Dockerfile = one Cloud Run resource.** Functions
+   included (Functions Framework container), so build, release and promotion work the same for every kind.
+3. **State is keyed by product name**, not repo path: moving or renaming the folder doesn't orphan state.
+4. **Products use the modules from the same commit** (relative path). A module change
+   autoplans every product in Atlantis, so the blast radius shows up on the PR.

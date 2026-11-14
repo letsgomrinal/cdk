@@ -1,0 +1,27 @@
+# Repo-wide settings shared by every product. Owned by the platform team.
+# Products inherit these; product.yaml can override `region` and `projects`.
+org: acme                      # project IDs default to {org}-{product}-{env}
+region: europe-west1
+
+# Where `cdk release` builds images (Cloud Build) and pushes them.
+build_project: acme-cicd
+registry: europe-west1-docker.pkg.dev/acme-artifacts/products   # image = {registry}/{product}/{component}:{sha}
+
+# Principals that roll out releases. They get run.developer on each workload and
+# serviceAccountUser on each runtime SA.
+deployers:
+  - serviceAccount:drone-release@acme-cicd.iam.gserviceaccount.com
+
+envs:
+  dev:
+    state_bucket: acme-tfstate-dev
+    deletion_protection: false
+    vpc:
+      network: projects/acme-net-dev/global/networks/shared
+      subnetwork: projects/acme-net-dev/regions/europe-west1/subnetworks/serverless
+  prod:
+    state_bucket: acme-tfstate-prod
+    deletion_protection: true
+    vpc:
+      network: projects/acme-net-prod/global/networks/shared
+      subnetwork: projects/acme-net-prod/regions/europe-west1/subnetworks/serverless

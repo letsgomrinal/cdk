@@ -1,13 +1,13 @@
 # Server-side Atlantis config (pass with --repo-config). Defines the single
 # workflow every cdk unit uses, so unit repos can't each invent their own.
 #
-# Each Atlantis project is one (product, env) pair:
-#   dir       = <unit>/deploy
-#   workspace = <env>    -> separate lock and planfile per env, and picks the env files below
+# Each Atlantis project is one (product, env) pair, generated into atlantis.yaml
+# by `tools/cdk sync`:
+#   dir       = products/<product>/deploy
+#   workspace = <env>    -> separate lock and planfile per env
 #
-# State lives in the env's own bucket (env/<env>.backend.hcl) under products/<product>/,
-# in Terraform's default workspace. The Atlantis workspace just labels the env;
-# Terraform workspaces aren't used.
+# State: backend.<env>.hcl (generated) -> the env's bucket, prefix products/<product>,
+# Terraform's default workspace. The Atlantis workspace only names the env.
 
 repos:
   - id: /.*/
@@ -29,8 +29,8 @@ workflows:
         - env:
             name: TF_WORKSPACE
             value: default
-        - run: terraform init -input=false -reconfigure -backend-config=env/$WORKSPACE.backend.hcl
-        - run: terraform plan -input=false -lock-timeout=5m -var-file=env/$WORKSPACE.tfvars -out=$PLANFILE
+        - run: terraform init -input=false -reconfigure -backend-config=backend.$WORKSPACE.hcl
+        - run: terraform plan -input=false -lock-timeout=5m -var env=$WORKSPACE -out=$PLANFILE
         - run: terraform show -no-color $PLANFILE > $SHOWFILE
     apply:
       steps:
