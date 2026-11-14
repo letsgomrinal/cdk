@@ -1,0 +1,43 @@
+# Server-side Atlantis config (pass with --repo-config). Defines the single
+# workflow every cdk unit uses, so unit repos can't each invent their own.
+#
+# Each Atlantis project is one (product, env) pair:
+#   dir       = <unit>/deploy
+#   workspace = <env>    -> separate lock and planfile per env, and picks the env files below
+#
+# State lives in the env's own bucket (env/<env>.backend.hcl) under products/<product>/,
+# in Terraform's default workspace. The Atlantis workspace just labels the env;
+# Terraform workspaces aren't used.
+
+repos:
+  - id: /.*/
+    allowed_overrides: [workflow]
+    allowed_workflows: [cdk]
+    allow_custom_workflows: false
+    plan_requirements: [undiverged]
+    apply_requirements: [approved, mergeable, undiverged]
+    import_requirements: [approved, mergeable, undiverged]
+
+workflows:
+  cdk:
+    plan:
+      steps:
+        # Separate .terraform dir per env, so parallel dev/prod plans in the same dir don't collide.
+        - env:
+            name: TF_DATA_DIR
+            command: echo ".terraform-$WORKSPACE"
+        - env:
+            name: TF_WORKSPACE
+            value: default
+        - run: terraform init -input=false -reconfigure -backend-config=env/$WORKSPACE.backend.hcl
+        - run: terraform plan -input=false -lock-timeout=5m -var-file=env/$WORKSPACE.tfvars -out=$PLANFILE
+        - run: terraform show -no-color $PLANFILE > $SHOWFILE
+    apply:
+      steps:
+        - env:
+            name: TF_DATA_DIR
+            command: echo ".terraform-$WORKSPACE"
+        - env:
+            name: TF_WORKSPACE
+            value: default
+        - run: terraform apply -input=false -lock-timeout=5m $PLANFILE

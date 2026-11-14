@@ -1,0 +1,6 @@
+# The unit's contract. tools/gen-atlantis.py and the Drone pipeline read this.
+# The folder works on its own (micro repo) or inside a monorepo, unchanged.
+product: orders          # 2-10 chars, [a-z][a-z0-9]*; prefix of every resource and SA name
+team: commerce
+kit_version: v0.1.0      # must match the ?ref= in deploy/main.tf
+envs: [dev, prod]        # each needs deploy/env/<env>.tfvars and <env>.backend.hcl
