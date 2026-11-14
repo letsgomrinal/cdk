@@ -1,0 +1,60 @@
+# Release pipeline for one product. Infra changes go through Atlantis on the PR;
+# this pipeline only builds code and rolls it out.
+#
+#   push to main       -> build image once -> release to dev
+#   drone promote prod -> release the SAME image to prod (no rebuild)
+kind: pipeline
+type: docker
+name: orders
+
+trigger:
+  event: [push, promote]
+
+steps:
+  - name: test
+    image: python:3.13-slim
+    commands:
+      - echo "run unit tests here"
+    when:
+      event: push
+
+  - name: image
+    image: plugins/docker
+    settings:
+      registry: europe-west1-docker.pkg.dev
+      repo: europe-west1-docker.pkg.dev/acme-artifacts/products/orders
+      tags: ${DRONE_COMMIT_SHA:0:12}
+      username: _json_key
+      password:
+        from_secret: gar_push_key
+    when:
+      event: push
+      branch: main
+
+  - name: release-dev
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    environment:
+      RELEASE_KEY:
+        from_secret: drone_release_key   # key for drone-release@acme-cicd (see docs/CONVENTIONS.md)
+      IMAGE: europe-west1-docker.pkg.dev/acme-artifacts/products/orders:${DRONE_COMMIT_SHA:0:12}
+    commands:
+      - echo "$RELEASE_KEY" > /tmp/key.json && gcloud auth activate-service-account --key-file=/tmp/key.json
+      - deploy/release.sh images acme-orders-dev europe-west1 orders "$IMAGE"
+      - deploy/release.sh function acme-orders-dev europe-west1 orders gcs-ingest functions/gcs-ingest handle python313
+    when:
+      event: push
+      branch: main
+
+  - name: release-prod
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    environment:
+      RELEASE_KEY:
+        from_secret: drone_release_key   # key for drone-release@acme-cicd (see docs/CONVENTIONS.md)
+      IMAGE: europe-west1-docker.pkg.dev/acme-artifacts/products/orders:${DRONE_COMMIT_SHA:0:12}
+    commands:
+      - echo "$RELEASE_KEY" > /tmp/key.json && gcloud auth activate-service-account --key-file=/tmp/key.json
+      - deploy/release.sh images acme-orders-prod europe-west1 orders "$IMAGE"
+      - deploy/release.sh function acme-orders-prod europe-west1 orders gcs-ingest functions/gcs-ingest handle python313
+    when:
+      event: promote
+      target: prod

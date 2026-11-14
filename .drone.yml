@@ -1,0 +1,32 @@
+# CI for the kit itself: formatting, offline module tests (mocked provider),
+# and checks that the example unit and the generated Atlantis config are valid.
+kind: pipeline
+type: docker
+name: cdk
+
+trigger:
+  event: [push, pull_request, tag]
+
+steps:
+  - name: fmt
+    image: hashicorp/terraform:1.17
+    commands:
+      - terraform fmt -recursive -check -diff
+
+  - name: test-modules
+    image: hashicorp/terraform:1.17
+    commands:
+      - |
+        for m in modules/product modules/workload-identity; do
+          (cd $m && terraform init -input=false -backend=false && terraform test) || exit 1
+        done
+
+  - name: validate-example
+    image: hashicorp/terraform:1.17
+    commands:
+      - cd examples/orders/deploy && terraform init -input=false -backend=false && terraform validate
+
+  - name: atlantis-config
+    image: python:3.13-slim
+    commands:
+      - python3 tools/gen-atlantis.py --check examples/orders

@@ -1,0 +1,89 @@
+# Offline tests with a mocked provider. No GCP credentials needed.
+#   cd modules/product && terraform init && terraform test
+
+mock_provider "google" {
+  mock_resource "google_service_account" {
+    defaults = {
+      name = "projects/p/serviceAccounts/mock@p.iam.gserviceaccount.com"
+    }
+  }
+  mock_resource "google_cloud_run_v2_job" {
+    defaults = {
+      id = "projects/p/locations/europe-west1/jobs/mock"
+    }
+  }
+}
+
+variables {
+  product    = "orders"
+  env        = "dev"
+  team       = "commerce"
+  project_id = "acme-orders-dev"
+  region     = "europe-west1"
+  deployers  = ["serviceAccount:drone-release@acme-cicd.iam.gserviceaccount.com"]
+}
+
+run "naming_and_identity" {
+  command = plan
+
+  variables {
+    services = {
+      api = { secret_env = { DB_URL = "orders-db-url" }, invokers = ["job/reconcile"] }
+    }
+    jobs = {
+      reconcile = { schedules = { hourly = { cron = "0 * * * *" } } }
+    }
+    worker_pools = {
+      email-sender = { access = { subscribe = ["email-sub"] } }
+    }
+  }
+
+  assert {
+    condition     = module.naming["service/api"].name == "orders-api-svc"
+    error_message = "Service name should be {product}-{workload}-svc."
+  }
+
+  assert {
+    condition     = module.naming["worker-pool/email-sender"].service_account_id == "orders-email-sender-wp"
+    error_message = "Worker pool SA id should be {product}-{workload}-wp."
+  }
+
+  assert {
+    condition     = module.naming["job/reconcile"].labels["workload-type"] == "job"
+    error_message = "Standard labels missing."
+  }
+
+  assert {
+    condition     = length(google_cloud_run_v2_service_iam_member.invokers) == 1
+    error_message = "job/reconcile should be granted run.invoker on the api."
+  }
+
+  assert {
+    condition     = length(google_cloud_run_v2_job_iam_member.deployers) == 1 && length(google_cloud_run_v2_worker_pool_iam_member.deployers) == 1
+    error_message = "Deployers should get run.developer on each resource."
+  }
+}
+
+run "rejects_long_product" {
+  command = plan
+  variables {
+    product = "ordersplatform"
+  }
+  expect_failures = [var.product]
+}
+
+run "rejects_long_workload_name" {
+  command = plan
+  variables {
+    jobs = { "this-name-is-way-too-long" = {} }
+  }
+  expect_failures = [var.jobs]
+}
+
+run "rejects_unknown_invoker_ref" {
+  command = plan
+  variables {
+    services = { api = { invokers = ["job/does-not-exist"] } }
+  }
+  expect_failures = [google_cloud_run_v2_service_iam_member.invokers]
+}
