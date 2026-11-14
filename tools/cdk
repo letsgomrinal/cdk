@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.9"
 # dependencies = ["ruamel.yaml>=0.18"]
@@ -15,9 +15,11 @@
   cdk promote <from-env> <to-env> [--products a,b] [--components p/c] [--dry-run]
 
 Edit products/<product>/product.yaml by hand or with add/remove; both are fine.
-release/promote need only the standard library (they read .cdk/manifest.json),
-so CI images just need python3 + gcloud. The other commands need ruamel.yaml
-(`pip install ruamel.yaml`, or run with `uv run tools/cdk ...`).
+
+Runs as a uv script: `tools/cdk ...` installs its own dependencies (pinned in
+tools/cdk.lock) on first use. release/promote need only the standard library
+(they read .cdk/manifest.json), so CI images with python3 + gcloud can run
+`python3 tools/cdk release ...` without uv.
 """
 import argparse
 import json
@@ -111,7 +113,7 @@ def yaml():
     try:
         from ruamel.yaml import YAML
     except ImportError:
-        die("this command needs ruamel.yaml: `pip install ruamel.yaml` (or `uv run tools/cdk ...`)")
+        die("this command needs ruamel.yaml: run it as `tools/cdk ...` or `uv run tools/cdk ...` (uv installs it)")
     y = YAML()
     y.preserve_quotes = True
     y.indent(mapping=2, sequence=4, offset=2)
@@ -187,6 +189,20 @@ def scaffold_code(product, name, kind, template):
                 continue
             f.write_text(text.replace("__PRODUCT__", product).replace("__NAME__", name))
     print(f"  create {dst.relative_to(ROOT)}/  ({kind}, {template})")
+    if (dst / "pyproject.toml").exists():
+        uv_lock(dst)
+
+
+def uv_lock(path):
+    """Python components are uv projects; the Dockerfile builds with `uv sync --locked`."""
+    if not shutil.which("uv"):
+        print(f"  warn   uv not found: run `uv lock` in {path.relative_to(ROOT)}/ before the first build")
+        return
+    res = subprocess.run(["uv", "lock", "--quiet"], cwd=path, capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"  warn   `uv lock` failed in {path.relative_to(ROOT)}/:\n{res.stderr.strip()}")
+    else:
+        print(f"  lock   {(path / 'uv.lock').relative_to(ROOT)}")
 
 
 def add_component(product, kind, name, template=None, quiet_sync=False):

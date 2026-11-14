@@ -50,9 +50,8 @@ docs/CONVENTIONS.md         naming, IAM, ownership
 
 ## Day to day
 
-```bash
-pip install ruamel.yaml          # or prefix commands with `uv run`
-```
+Python tooling uses [uv](https://docs.astral.sh/uv/). `tools/cdk` is a uv script, so its
+dependencies install themselves on first run (pinned in `tools/cdk.lock`).
 
 ```bash
 tools/cdk add orders api search --template fastapi
@@ -67,7 +66,7 @@ tools/cdk sync
 ```
 
 `add` updates `product.yaml`, copies the template into
-`products/orders/search/` and re-syncs. Edit `product.yaml` by hand whenever
+`products/orders/search/`, runs `uv lock` for Python components, and re-syncs. Edit `product.yaml` by hand whenever
 you like, then run `tools/cdk sync`. CI fails if you forget.
 
 ## How changes flow
@@ -87,6 +86,26 @@ drone promote <build> prod ─► `cdk promote dev prod`  (deploys the exact ima
   `-p COMPONENTS=orders/backend`.
 * **Terraform ignores the image**, so infra applies and code releases never
   overwrite each other.
+
+## Python components (uv)
+
+Each Python component is its own uv project (`pyproject.toml` + `uv.lock`) and its
+own Docker build, so components don't share a lockfile.
+
+```bash
+cd products/orders/backend
+```
+
+```bash
+uv add httpx
+```
+
+```bash
+uv run uvicorn main:app --reload
+```
+
+The Dockerfile installs with `uv sync --locked --no-dev`, so a stale `uv.lock` fails the
+build. CI also checks every lockfile.
 
 ## Setup (once, by the platform team)
 
@@ -109,4 +128,4 @@ cd modules/product-spec && terraform init -backend=false && terraform test
 
 Module tests use a mocked provider and need no GCP access. Requires Terraform
 ≥ 1.7 for tests (≥ 1.6 to run), google provider ≥ 8.0 (developed against 8.11),
-Python ≥ 3.9.
+Python ≥ 3.9, uv.

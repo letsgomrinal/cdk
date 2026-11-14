@@ -28,10 +28,20 @@ steps:
         done
 
   - name: generated-files
-    image: python:3.13-slim
+    image: ghcr.io/astral-sh/uv:0.13.6-python3.13-bookworm-slim
     commands:
-      - pip install --quiet ruamel.yaml
-      - python3 tools/cdk sync --check
+      - uv run tools/cdk sync --check
+
+  - name: python-lockfiles
+    image: ghcr.io/astral-sh/uv:0.13.6-python3.13-bookworm-slim
+    commands:
+      # every Python component must have a uv.lock matching its pyproject.toml
+      - |
+        for p in products/*/*/pyproject.toml; do
+          d=$(dirname "$p")
+          test -f "$d/uv.lock" || { echo "$d: missing uv.lock (run: uv lock --directory $d)"; exit 1; }
+          uv lock --check --directory "$d" || exit 1
+        done
 
 ---
 kind: pipeline
