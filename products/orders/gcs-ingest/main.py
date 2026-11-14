@@ -1,4 +1,5 @@
 """Cloud Run function (CloudEvents). Triggers are declared in product.yaml."""
+
 import functions_framework
 
 

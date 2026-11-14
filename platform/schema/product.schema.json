@@ -1,0 +1,775 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "product.schema.json",
+  "title": "product.yaml",
+  "description": "A product in this monorepo. Reference: docs/PRODUCT_YAML.md",
+  "type": "object",
+  "required": [
+    "product",
+    "team",
+    "envs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "product": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]{1,9}$",
+      "description": "2-10 chars, [a-z][a-z0-9]*. Prefix of every resource and SA name."
+    },
+    "team": {
+      "type": "string",
+      "description": "Owning team: GitHub team slug (CODEOWNERS) and label"
+    },
+    "envs": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "dev",
+          "prod"
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "region": {
+      "type": "string"
+    },
+    "projects": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "dev",
+          "prod"
+        ]
+      },
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Per-env project ID if not {org}-{product}-{env}"
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "components": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "web",
+              "api",
+              "job",
+              "worker",
+              "function"
+            ],
+            "description": "web | api -> Cloud Run service; job; worker -> worker pool; function"
+          },
+          "template": {
+            "enum": [
+              "fastapi",
+              "nextjs",
+              "python-function",
+              "python-job",
+              "python-worker",
+              "react"
+            ],
+            "description": "Scaffold used by `cdk add` (informational)"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+          },
+          "secret_env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+          },
+          "cpu": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "vCPUs, e.g. \"1\", \"2\""
+          },
+          "memory": {
+            "type": "string",
+            "pattern": "^[0-9]+(Mi|Gi)$",
+            "description": "e.g. 512Mi, 1Gi"
+          },
+          "use_vpc": {
+            "type": "boolean",
+            "description": "Attach the env's VPC egress (default true)"
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+          },
+          "access": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Resource-level IAM for this component's service account",
+            "properties": {
+              "secrets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "secretAccessor on each secret"
+              },
+              "buckets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "admin"
+                  ]
+                },
+                "description": "bucket: read | write | admin"
+              },
+              "publish": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.publisher on each topic"
+              },
+              "subscribe": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.subscriber on each subscription"
+              },
+              "bigquery_datasets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                },
+                "description": "\"dataset\" or \"project:dataset\": read | write"
+              },
+              "project_roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Escape hatch: project-wide roles (reviewed)"
+              }
+            }
+          },
+          "image": {
+            "type": "string",
+            "description": "Initial image only; releases set the image afterwards"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "public": {
+            "type": "boolean",
+            "description": "Internet-facing: ingress ALL + allUsers invoker"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "ingress": {
+            "enum": [
+              "INGRESS_TRAFFIC_ALL",
+              "INGRESS_TRAFFIC_INTERNAL_ONLY",
+              "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+            ]
+          },
+          "min_instances": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_instances": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "concurrency": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timeout": {
+            "type": "string",
+            "pattern": "^[0-9]+s$",
+            "description": "Seconds, e.g. 300s"
+          },
+          "cpu_idle": {
+            "type": "boolean",
+            "description": "CPU only during requests (default true)"
+          },
+          "invokers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Who may call this: component names or IAM members"
+          },
+          "task_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "parallelism": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_retries": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "schedules": {
+            "type": "object",
+            "description": "Cloud Scheduler triggers for this job",
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "cron"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "cron": {
+                  "type": "string",
+                  "description": "e.g. \"0 2 * * *\""
+                },
+                "time_zone": {
+                  "type": "string",
+                  "description": "IANA name, default Etc/UTC"
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Override container args for this schedule"
+                },
+                "paused": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "instances": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Worker pool instance count"
+          },
+          "triggers": {
+            "type": "object",
+            "description": "Eventarc triggers delivering events to this function",
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "event_type"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "event_type": {
+                  "type": "string",
+                  "description": "e.g. google.cloud.storage.object.v1.finalized"
+                },
+                "filters": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "pubsub_topic": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "web"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "propertyNames": {
+                "enum": [
+                  "kind",
+                  "template",
+                  "env",
+                  "secret_env",
+                  "cpu",
+                  "memory",
+                  "use_vpc",
+                  "access",
+                  "calls",
+                  "image",
+                  "command",
+                  "args",
+                  "public",
+                  "ingress",
+                  "min_instances",
+                  "max_instances",
+                  "concurrency",
+                  "timeout",
+                  "invokers",
+                  "port",
+                  "cpu_idle"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "api"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "propertyNames": {
+                "enum": [
+                  "kind",
+                  "template",
+                  "env",
+                  "secret_env",
+                  "cpu",
+                  "memory",
+                  "use_vpc",
+                  "access",
+                  "calls",
+                  "image",
+                  "command",
+                  "args",
+                  "public",
+                  "ingress",
+                  "min_instances",
+                  "max_instances",
+                  "concurrency",
+                  "timeout",
+                  "invokers",
+                  "port",
+                  "cpu_idle"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "job"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "propertyNames": {
+                "enum": [
+                  "kind",
+                  "template",
+                  "env",
+                  "secret_env",
+                  "cpu",
+                  "memory",
+                  "use_vpc",
+                  "access",
+                  "calls",
+                  "image",
+                  "command",
+                  "args",
+                  "task_count",
+                  "parallelism",
+                  "max_retries",
+                  "timeout",
+                  "schedules"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "worker"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "propertyNames": {
+                "enum": [
+                  "kind",
+                  "template",
+                  "env",
+                  "secret_env",
+                  "cpu",
+                  "memory",
+                  "use_vpc",
+                  "access",
+                  "calls",
+                  "image",
+                  "command",
+                  "args",
+                  "instances"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "function"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "propertyNames": {
+                "enum": [
+                  "kind",
+                  "template",
+                  "env",
+                  "secret_env",
+                  "cpu",
+                  "memory",
+                  "use_vpc",
+                  "access",
+                  "calls",
+                  "public",
+                  "ingress",
+                  "min_instances",
+                  "max_instances",
+                  "concurrency",
+                  "timeout",
+                  "invokers",
+                  "triggers"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "dev",
+          "prod"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "propertyNames": {
+            "not": {
+              "const": "kind"
+            }
+          },
+          "properties": {
+            "template": {
+              "enum": [
+                "fastapi",
+                "nextjs",
+                "python-function",
+                "python-job",
+                "python-worker",
+                "react"
+              ],
+              "description": "Scaffold used by `cdk add` (informational)"
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              },
+              "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+            },
+            "secret_env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+            },
+            "cpu": {
+              "type": [
+                "string",
+                "number"
+              ],
+              "description": "vCPUs, e.g. \"1\", \"2\""
+            },
+            "memory": {
+              "type": "string",
+              "pattern": "^[0-9]+(Mi|Gi)$",
+              "description": "e.g. 512Mi, 1Gi"
+            },
+            "use_vpc": {
+              "type": "boolean",
+              "description": "Attach the env's VPC egress (default true)"
+            },
+            "calls": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+            },
+            "access": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Resource-level IAM for this component's service account",
+              "properties": {
+                "secrets": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "secretAccessor on each secret"
+                },
+                "buckets": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "enum": [
+                      "read",
+                      "write",
+                      "admin"
+                    ]
+                  },
+                  "description": "bucket: read | write | admin"
+                },
+                "publish": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "pubsub.publisher on each topic"
+                },
+                "subscribe": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "pubsub.subscriber on each subscription"
+                },
+                "bigquery_datasets": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "enum": [
+                      "read",
+                      "write"
+                    ]
+                  },
+                  "description": "\"dataset\" or \"project:dataset\": read | write"
+                },
+                "project_roles": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Escape hatch: project-wide roles (reviewed)"
+                }
+              }
+            },
+            "image": {
+              "type": "string",
+              "description": "Initial image only; releases set the image afterwards"
+            },
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "public": {
+              "type": "boolean",
+              "description": "Internet-facing: ingress ALL + allUsers invoker"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "ingress": {
+              "enum": [
+                "INGRESS_TRAFFIC_ALL",
+                "INGRESS_TRAFFIC_INTERNAL_ONLY",
+                "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+              ]
+            },
+            "min_instances": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_instances": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "concurrency": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^[0-9]+s$",
+              "description": "Seconds, e.g. 300s"
+            },
+            "cpu_idle": {
+              "type": "boolean",
+              "description": "CPU only during requests (default true)"
+            },
+            "invokers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Who may call this: component names or IAM members"
+            },
+            "task_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "parallelism": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_retries": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "schedules": {
+              "type": "object",
+              "description": "Cloud Scheduler triggers for this job",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "cron"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "cron": {
+                    "type": "string",
+                    "description": "e.g. \"0 2 * * *\""
+                  },
+                  "time_zone": {
+                    "type": "string",
+                    "description": "IANA name, default Etc/UTC"
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Override container args for this schedule"
+                  },
+                  "paused": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "instances": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Worker pool instance count"
+            },
+            "triggers": {
+              "type": "object",
+              "description": "Eventarc triggers delivering events to this function",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "event_type"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "event_type": {
+                    "type": "string",
+                    "description": "e.g. google.cloud.storage.object.v1.finalized"
+                  },
+                  "filters": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "pubsub_topic": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "description": "Per-env, per-component settings, shallow-merged"
+    }
+  }
+}

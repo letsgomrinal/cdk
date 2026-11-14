@@ -1,5 +1,6 @@
 """Worker pool: long-running Pub/Sub pull consumer. Set SUBSCRIPTION in product.yaml env
 and grant it under access.subscribe."""
+
 import os
 
 from google.cloud import pubsub_v1

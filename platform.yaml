@@ -7,6 +7,12 @@ region: europe-west1
 build_project: acme-cicd
 registry: europe-west1-docker.pkg.dev/acme-artifacts/products   # image = {registry}/{product}/{component}:{sha}
 
+# GitHub teams for the generated CODEOWNERS: products are owned by @{org}/{team},
+# everything else by the platform team.
+codeowners:
+  org: acme
+  platform_team: platform
+
 # Principals that roll out releases. They get run.developer on each workload and
 # serviceAccountUser on each runtime SA.
 deployers:

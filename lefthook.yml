@@ -1,0 +1,32 @@
+# Git hooks (installed by `mise run setup`). Fast: only staged files, in parallel,
+# auto-fixes are re-staged. Skip once with LEFTHOOK=0 git commit ...
+pre-commit:
+  parallel: true
+  commands:
+    ruff:
+      glob: "*.py"
+      run: uv run ruff check --fix --quiet {staged_files} && uv run ruff format --quiet {staged_files}
+      stage_fixed: true
+    biome:
+      glob: "*.{js,jsx,ts,tsx,mjs,json,jsonc,css}"
+      run: pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
+    terraform:
+      glob: "*.{tf,tftest.hcl}"
+      run: terraform fmt {staged_files}
+      stage_fixed: true
+    generated-files:
+      # product.yaml / platform.yaml changed -> regenerate deploy/, atlantis.yaml, CODEOWNERS, ...
+      glob: "{platform.yaml,products/*/product.yaml}"
+      run: uv run cdk sync && git add atlantis.yaml CODEOWNERS pyrightconfig.json platform/schema products/*/deploy
+    lockfiles:
+      glob: "products/*/*/{pyproject.toml,package.json}"
+      run: uv run cdk check --affected --base HEAD --fail-fast
+
+pre-push:
+  commands:
+    cdk-tests:
+      glob: "tools/cdk/**"
+      run: uv run pytest
+    affected:
+      run: uv run cdk check --affected --base origin/main
