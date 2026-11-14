@@ -1,17 +1,20 @@
 # Turns a product.yaml (plus the repo-wide platform.yaml) into a call to
-# modules/product. This is where the user-facing component kinds map to Cloud Run types:
+# modules/product. The section a component sits in decides its Cloud Run type:
 #
-#   kind      -> type          notes
-#   web       -> service       React / Next.js frontends; `public: true` opens it to the internet
-#   api       -> service       FastAPI etc.; internal by default
-#   job       -> job
-#   worker    -> worker-pool
-#   function  -> function      Eventarc-triggered
+#   section    -> type          notes
+#   apps       -> service       frontends (Next.js, React); `public: true` opens it to the internet
+#   apis       -> service       backends (FastAPI, ...); internal by default
+#   jobs       -> job           run-to-completion, optional schedules
+#   workers    -> worker-pool   always-on consumers
+#   functions  -> function      Eventarc-triggered
+#
+# Component names are unique across the whole product (they name the code folder
+# products/<product>/<section>/<name>/ and the Cloud Run resource).
 #
 # product.yaml extras handled here:
-#   calls: [backend]   -> caller gets run.invoker on backend, plus env BACKEND_URL
-#   public: true       -> ingress ALL + allUsers invoker (web/api/function only)
-#   overrides.<env>    -> per-env, per-component shallow merge (e.g. prod sizing)
+#   calls: [backend]          -> caller gets run.invoker on backend, plus env BACKEND_URL
+#   public: true              -> ingress ALL + allUsers invoker (apps/apis/functions only)
+#   overrides.<env>.<section> -> per-env, per-component shallow merge (e.g. prod sizing)
 #   "{env}", "{project}", "{product}" placeholders anywhere in component config
 #   every workload gets env ENV, PRODUCT, COMPONENT
 
@@ -37,16 +40,16 @@ variable "env" {
 }
 
 locals {
-  kinds = {
-    web      = "service"
-    api      = "service"
-    job      = "job"
-    worker   = "worker-pool"
-    function = "function"
+  sections = {
+    apps      = "service"
+    apis      = "service"
+    jobs      = "job"
+    workers   = "worker-pool"
+    functions = "function"
   }
   codes = { service = "svc", job = "job", "worker-pool" = "wp", function = "fn" }
 
-  common_keys = ["kind", "template", "env", "secret_env", "cpu", "memory", "use_vpc", "access", "calls"]
+  common_keys = ["template", "env", "secret_env", "cpu", "memory", "use_vpc", "access", "calls"]
   allowed_keys = {
     service       = concat(local.common_keys, ["image", "command", "args", "public", "port", "ingress", "min_instances", "max_instances", "concurrency", "timeout", "cpu_idle", "invokers"])
     job           = concat(local.common_keys, ["image", "command", "args", "task_count", "parallelism", "max_retries", "timeout", "schedules"])
@@ -59,34 +62,46 @@ locals {
   project_id = try(var.spec.projects[var.env], "${var.platform.org}-${local.product}-${var.env}")
   region     = try(var.spec.region, var.platform.region)
 
-  raw_components = try(var.spec.components, {})
-  overrides      = try(var.spec.overrides[var.env], {})
-  merged         = { for k, c in local.raw_components : k => merge(c, try(local.overrides[k], {})) }
+  # A section written as `jobs:` with nothing under it decodes to null.
+  # try() instead of `x == null ? {} : x`, because the two branches have different types.
+  sec       = { for s in keys(local.sections) : s => try({ for n, c in var.spec[s] : n => c }, {}) }
+  overrides = try({ for s, v in var.spec.overrides[var.env] : s => v }, {})
+  all_names = flatten([for s, comps in local.sec : keys(comps)])
+
+  merged = merge([for s, comps in local.sec : {
+    for n, c in comps : n => merge(try({ for k, v in c : k => v }, {}), try(local.overrides[s][n], {}))
+  }]...)
   c = jsondecode(replace(replace(replace(jsonencode(local.merged),
     "{env}", var.env),
     "{project}", local.project_id),
   "{product}", local.product))
 
-  type_of  = { for k, c in local.c : k => lookup(local.kinds, try(c.kind, ""), "invalid") }
-  name_of  = { for k, t in local.type_of : k => "${local.product}-${k}-${lookup(local.codes, t, "x")}" }
-  ref_of   = { for k, t in local.type_of : k => "${t}/${k}" }
-  http     = [for k, t in local.type_of : k if contains(["service", "function"], t)]
-  calls_of = { for k, c in local.c : k => try(tolist(c.calls), []) }
+  section_of = merge([for s, comps in local.sec : { for n in keys(comps) : n => s }]...)
+  type_of    = { for n, s in local.section_of : n => local.sections[s] }
+  name_of    = { for k, t in local.type_of : k => "${local.product}-${k}-${local.codes[t]}" }
+  ref_of     = { for k, t in local.type_of : k => "${t}/${k}" }
+  http       = [for k, t in local.type_of : k if contains(["service", "function"], t)]
+  calls_of   = { for k, c in local.c : k => try(tolist(c.calls), []) }
 
   # ---- validation (all problems reported together)
   errors = concat(
-    [for k, t in local.type_of : "${k}: kind must be one of ${join(", ", keys(local.kinds))}" if t == "invalid"],
+    [for n in distinct(local.all_names) : "component '${n}' is defined in more than one section; names must be unique in a product"
+    if length([for x in local.all_names : x if x == n]) > 1],
     flatten([for k, c in local.c : [
-      for key in keys(c) : "${k}: unknown key '${key}' for kind ${try(c.kind, "?")}"
-      if local.type_of[k] != "invalid" && !contains(local.allowed_keys[local.type_of[k]], key)
+      for key in keys(c) : "${local.section_of[k]}.${k}: unknown key '${key}'"
+      if !contains(local.allowed_keys[local.type_of[k]], key)
     ]]),
     flatten([for k, calls in local.calls_of : [
-      for t in calls : "${k}: calls '${t}', which isn't a web/api/function component of this product"
+      for t in calls : "${local.section_of[k]}.${k}: calls '${t}', which isn't an app, api or function of this product"
       if !contains(local.http, t)
     ]]),
-    [for k, c in local.c : "${k}: public is only allowed for web/api/function"
+    [for k, c in local.c : "${local.section_of[k]}.${k}: public is only allowed for apps, apis and functions"
     if try(c.public, false) && !contains(["service", "function"], local.type_of[k])],
-    [for k in keys(local.overrides) : "overrides.${var.env}.${k}: no such component" if !contains(keys(local.c), k)],
+    flatten([for s, comps in local.overrides : concat(
+      contains(keys(local.sections), s) ? [] : ["overrides.${var.env}.${s}: not a section (${join(", ", keys(local.sections))})"],
+      [for n in keys(comps) : "overrides.${var.env}.${s}.${n}: no such component in ${s}"
+      if contains(keys(local.sections), s) && !contains(keys(local.sec[s]), n)],
+    )]),
   )
 
   # ---- calls -> URLs + invoker grants

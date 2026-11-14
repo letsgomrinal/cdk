@@ -41,7 +41,7 @@ def orders(root: Path) -> Repo:
 
     repo = Repo.load(root)
     adds: list[tuple[str, str, str | None]] = [
-        ("web", "storefront", "nextjs"),
+        ("app", "storefront", "nextjs"),
         ("api", "backend", None),
         ("job", "nightly", None),
         ("worker", "mailer", None),

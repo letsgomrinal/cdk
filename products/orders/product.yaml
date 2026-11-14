@@ -1,28 +1,27 @@
 # yaml-language-server: $schema=../../platform/schema/product.schema.json
 #
-# Infra for product "orders". This file is the whole definition:
-# add/remove components here (or with `cdk add|remove`), then run `cdk sync`.
-# Reference: docs/PRODUCT_YAML.md
+# Infra for product "orders". Each section below is a deployment type; each entry
+# in it is a component whose code lives in products/orders/<section>/<name>/.
+# Add/remove with `cdk add|remove` (or by hand, then `cdk sync`). Reference: docs/PRODUCT_YAML.md
 product: orders
 team: commerce
 envs: [dev, prod]
 
-components:
+apps:           # frontends: Next.js, React (Cloud Run service)
   storefront:
-    kind: web
     template: nextjs
-    public: true # internet-facing; delete this line to keep it internal
-    calls: [backend] # may invoke `backend`; its URL is injected as BACKEND_URL
+    public: true          # internet-facing; delete this line to keep it internal
+    calls: [backend]      # may invoke `backend`; its URL is injected as BACKEND_URL
 
+apis:           # HTTP backends: FastAPI (Cloud Run service)
   backend:
-    kind: api
     template: fastapi
     memory: 1Gi
-    secret_env: { DB_URL: orders-db-url } # access to the secret is granted automatically
+    secret_env: { DB_URL: orders-db-url }    # access to the secret is granted automatically
     access: { publish: [orders-events] }
 
+jobs:           # run to completion, optionally on a schedule (Cloud Run job)
   nightly-export:
-    kind: job
     template: python-job
     args: [export]
     secret_env: { DB_URL: orders-db-url }
@@ -33,7 +32,6 @@ components:
       bigquery_datasets: { orders_analytics: write }
 
   reconcile:
-    kind: job
     template: python-job
     task_count: 4
     calls: [backend]
@@ -41,8 +39,8 @@ components:
       hourly: { cron: "15 * * * *" }
       weekly: { cron: "0 4 * * 0", args: ["--full"] }
 
+workers:        # always-on queue/stream consumers (Cloud Run worker pool)
   email-sender:
-    kind: worker
     template: python-worker
     instances: 1
     env: { SUBSCRIPTION: "projects/{project}/subscriptions/orders-email-requests" }
@@ -51,8 +49,8 @@ components:
       subscribe: [orders-email-requests]
       buckets: { acme-orders-templates: read }
 
+functions:      # react to events: GCS, Pub/Sub, ... (Cloud Run function + Eventarc)
   gcs-ingest:
-    kind: function
     template: python-function
     access:
       buckets: { "acme-orders-inbox-{env}": read }
@@ -65,5 +63,7 @@ components:
 # Per-env tweaks, shallow-merged into a component's settings:
 overrides:
   prod:
-    backend: { min_instances: 2 }
-    email-sender: { instances: 4 }
+    apis:
+      backend: { min_instances: 2 }
+    workers:
+      email-sender: { instances: 4 }

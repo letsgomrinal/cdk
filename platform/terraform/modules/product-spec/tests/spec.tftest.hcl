@@ -28,20 +28,28 @@ variables {
     product = "orders"
     team    = "commerce"
     envs    = ["dev", "prod"]
-    components = {
-      storefront = { kind = "web", template = "nextjs", public = true, calls = ["backend"] }
-      backend    = { kind = "api", secret_env = { DB_URL = "orders-db-url" }, invokers = ["reconcile"] }
-      reconcile  = { kind = "job", schedules = { hourly = { cron = "15 * * * *" } } }
-      email      = { kind = "worker", instances = 1, access = { buckets = { "acme-orders-{env}" = "read" } } }
-      ingest     = { kind = "function", triggers = { up = { event_type = "google.cloud.storage.object.v1.finalized", filters = { bucket = "b" } } } }
+    apps = {
+      storefront = { template = "nextjs", public = true, calls = ["backend"] }
+    }
+    apis = {
+      backend = { secret_env = { DB_URL = "orders-db-url" }, invokers = ["reconcile"] }
+    }
+    jobs = {
+      reconcile = { schedules = { hourly = { cron = "15 * * * *" } } }
+    }
+    workers = {
+      email = { instances = 1, access = { buckets = { "acme-orders-{env}" = "read" } } }
+    }
+    functions = {
+      ingest = { triggers = { up = { event_type = "google.cloud.storage.object.v1.finalized", filters = { bucket = "b" } } } }
     }
     overrides = {
-      prod = { email = { instances = 4 } }
+      prod = { workers = { email = { instances = 4 } } }
     }
   }
 }
 
-run "translates_kinds_and_wiring" {
+run "translates_sections_and_wiring" {
   command = plan
 
   assert {
@@ -50,7 +58,7 @@ run "translates_kinds_and_wiring" {
   }
   assert {
     condition     = output.workloads["service/storefront"].name == "orders-storefront-svc" && output.workloads["service/backend"].name == "orders-backend-svc" && output.workloads["worker-pool/email"].type == "worker-pool"
-    error_message = "web and api should both become Cloud Run services."
+    error_message = "apps and apis should both become Cloud Run services."
   }
   assert {
     condition     = local.call_env["storefront"]["BACKEND_URL"] == "https://orders-backend-svc-123456789.europe-west1.run.app"
@@ -99,13 +107,35 @@ run "rejects_bad_spec" {
     spec = {
       product = "orders"
       team    = "commerce"
-      components = {
-        api    = { kind = "api", min_instance = 2 } # typo
-        thing  = { kind = "lambda" }                # bad kind
-        job1   = { kind = "job", public = true }    # public job
-        caller = { kind = "web", calls = ["nope"] } # unknown target
+      apis = {
+        api  = { min_instance = 2 } # typo
+        dupe = {}
       }
+      jobs = {
+        job1 = { public = true } # public job
+        dupe = {}                # same name in two sections
+      }
+      apps = {
+        caller = { calls = ["nope"] } # unknown target
+      }
+      overrides = { prod = { apis = { ghost = { memory = "1Gi" } } } }
     }
   }
   expect_failures = [terraform_data.validate]
+}
+
+run "empty_sections_are_fine" {
+  command = plan
+  variables {
+    spec = {
+      product = "orders"
+      team    = "commerce"
+      apps    = null
+      jobs    = { nightly = null }
+    }
+  }
+  assert {
+    condition     = output.workloads["job/nightly"].name == "orders-nightly-job" && length(output.workloads) == 1
+    error_message = "A null section or a component with no settings should work."
+  }
 }

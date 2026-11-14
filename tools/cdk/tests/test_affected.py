@@ -19,9 +19,9 @@ def keys(repo: Repo, files: list[str] | None, scope: str) -> list[str]:
 
 def test_component_change(orders: Repo) -> None:
     base = git(orders.root, "rev-parse", "HEAD").strip()
-    _commit(orders, "products/orders/backend/main.py")
+    _commit(orders, "products/orders/apis/backend/main.py")
     files = changed_files(orders, base)
-    assert files == ["products/orders/backend/main.py"]
+    assert files == ["products/orders/apis/backend/main.py"]
     assert keys(orders, files, "release") == ["orders/backend"]
     assert keys(orders, files, "check") == ["orders/backend"]
 
@@ -34,13 +34,13 @@ def test_shared_config_affects_all_checks_but_no_release(orders: Repo) -> None:
 
 
 def test_prefix_is_not_a_false_match(orders: Repo) -> None:
-    assert keys(orders, ["products/orders/backend-old/x.py"], "release") == []
+    assert keys(orders, ["products/orders/apis/backend-old/x.py"], "release") == []
 
 
 def test_uncommitted_changes_count(orders: Repo) -> None:
     base = git(orders.root, "rev-parse", "HEAD").strip()
-    (orders.root / "products/orders/nightly/new.py").write_text("x = 1\n")
-    assert changed_files(orders, base) == ["products/orders/nightly/new.py"]
+    (orders.root / "products/orders/jobs/nightly/new.py").write_text("x = 1\n")
+    assert changed_files(orders, base) == ["products/orders/jobs/nightly/new.py"]
 
 
 @pytest.mark.parametrize("base", [None, "0000000000000000000000000000000000000000", "deadbeef"])
