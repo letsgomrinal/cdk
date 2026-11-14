@@ -1,0 +1,73 @@
+# Pinned toolchain + tasks. One-time setup:
+#   curl https://mise.run | sh     (or: brew install mise)
+#   mise install && mise run setup
+# Renovate keeps these versions current.
+
+[tools]
+python = "3.13"
+uv = "0.13.6"
+node = "22"
+pnpm = "12.16.1"
+terraform = "1.17.2"
+tflint = "0.59.1"
+lefthook = "2.2.2"
+
+[env]
+# `cdk` works from anywhere in the repo without `uv run`
+_.path = ["{{config_root}}/.venv/bin", "{{config_root}}/node_modules/.bin"]
+
+[tasks.setup]
+description = "Install dependencies and git hooks"
+run = [
+  "uv sync",
+  "pnpm install",
+  "tflint --init --config {{config_root}}/.tflint.hcl",
+  "lefthook install",
+]
+
+[tasks.fmt]
+description = "Format everything"
+run = [
+  "uv run ruff check --fix --quiet .",
+  "uv run ruff format --quiet .",
+  "pnpm exec biome check --write .",
+  "terraform fmt -recursive",
+]
+
+[tasks.lint]
+description = "Lint everything (no changes)"
+run = [
+  "uv run ruff check .",
+  "uv run ruff format --check .",
+  "uv run basedpyright",
+  "pnpm exec biome ci .",
+  "terraform fmt -recursive -check",
+  "tflint --recursive --config {{config_root}}/.tflint.hcl",
+  "uv run cdk sync --check",
+]
+
+[tasks."test:cdk"]
+description = "cdk unit tests"
+run = "uv run pytest"
+
+[tasks."test:terraform"]
+description = "Terraform module tests (mocked provider, no GCP access)"
+dir = "{{config_root}}/platform/terraform/modules"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+for m in */; do
+  [ -d "$m/tests" ] || continue
+  echo "== $m"
+  (cd "$m" && terraform init -input=false -backend=false >/dev/null && terraform test)
+done
+"""
+
+[tasks.test]
+description = "All tests"
+depends = ["test:cdk", "test:terraform"]
+
+[tasks.check]
+description = "What CI runs: lint, tests, and checks for affected components"
+depends = ["lint", "test"]
+run = "uv run cdk check --affected --base origin/main"

@@ -1,10 +1,12 @@
-# Shared CI/CD for every product in the monorepo. Products don't have their own
-# pipelines: `tools/cdk release` works out which components changed and ships only those.
+# Shared CI/CD for every product. No product has its own pipeline:
+# `cdk check --affected` and `cdk release` work out which components a change touches.
 #
-#   PR / push           -> checks (fmt, module tests, generated files up to date)
+#   PR / push           -> lint + test the repo, check affected components
 #   push to main        -> build changed components (Cloud Build) -> deploy to dev
 #   drone promote prod  -> deploy the images running in dev to prod (no rebuild)
 #                          optional: -p PRODUCTS=orders,billing  -p COMPONENTS=orders/backend
+#
+# Tool versions match mise.toml (Renovate updates both).
 ---
 kind: pipeline
 type: docker
@@ -14,34 +16,49 @@ trigger:
   event: [push, pull_request, promote]
 
 steps:
-  - name: fmt
-    image: hashicorp/terraform:1.17
+  - name: terraform
+    image: hashicorp/terraform:1.17.2
     commands:
       - terraform fmt -recursive -check -diff
-
-  - name: module-tests
-    image: hashicorp/terraform:1.17
-    commands:
       - |
-        for m in modules/product-spec modules/product modules/workload-identity; do
-          (cd $m && terraform init -input=false -backend=false && terraform test) || exit 1
+        for m in platform/terraform/modules/*/; do
+          [ -d "$m/tests" ] || continue
+          (cd "$m" && terraform init -input=false -backend=false >/dev/null && terraform test) || exit 1
         done
 
-  - name: generated-files
-    image: ghcr.io/astral-sh/uv:0.13.6-python3.13-bookworm-slim
+  - name: tflint
+    image: ghcr.io/terraform-linters/tflint:v0.59.1
     commands:
-      - uv run tools/cdk sync --check
+      - tflint --init --config "$PWD/.tflint.hcl"
+      - tflint --recursive --config "$PWD/.tflint.hcl"
 
-  - name: python-lockfiles
-    image: ghcr.io/astral-sh/uv:0.13.6-python3.13-bookworm-slim
+  - name: python
+    image: ghcr.io/astral-sh/uv:0.13.6-python3.13-bookworm
     commands:
-      # every Python component must have a uv.lock matching its pyproject.toml
-      - |
-        for p in products/*/*/pyproject.toml; do
-          d=$(dirname "$p")
-          test -f "$d/uv.lock" || { echo "$d: missing uv.lock (run: uv lock --directory $d)"; exit 1; }
-          uv lock --check --directory "$d" || exit 1
-        done
+      - uv sync --locked
+      - uv run ruff check .
+      - uv run ruff format --check .
+      - uv run basedpyright
+      - uv run pytest
+      - uv run cdk sync --check
+
+  - name: python-components
+    image: ghcr.io/astral-sh/uv:0.13.6-python3.13-bookworm
+    commands:
+      - git fetch --quiet --unshallow || true
+      - uv sync --locked
+      - uv run cdk check --affected --lang python
+    depends_on: [python]
+
+  - name: node-components
+    image: node:22-bookworm
+    commands:
+      - git fetch --quiet --unshallow || true
+      - npm install -g pnpm@12.16.1
+      - curl -LsSf https://astral.sh/uv/0.13.6/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
+      - pnpm install --frozen-lockfile
+      - pnpm exec biome ci .
+      - uv run cdk check --affected --lang node --build
 
 ---
 kind: pipeline
@@ -58,9 +75,10 @@ steps:
       RELEASE_KEY:
         from_secret: drone_release_key   # drone-release@acme-cicd
     commands:
+      - git fetch --quiet --unshallow || true   # history to diff against DRONE_COMMIT_BEFORE
+      - curl -LsSf https://astral.sh/uv/0.13.6/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
       - echo "$RELEASE_KEY" > /tmp/key.json && gcloud auth activate-service-account --key-file=/tmp/key.json
-      - git fetch --quiet --unshallow || true   # needs history to diff against DRONE_COMMIT_BEFORE; otherwise everything is released
-      - python3 tools/cdk release dev
+      - uv run --locked cdk release dev
     when:
       event: push
       branch: main
@@ -71,8 +89,9 @@ steps:
       RELEASE_KEY:
         from_secret: drone_release_key
     commands:
+      - curl -LsSf https://astral.sh/uv/0.13.6/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
       - echo "$RELEASE_KEY" > /tmp/key.json && gcloud auth activate-service-account --key-file=/tmp/key.json
-      - python3 tools/cdk promote dev prod
+      - uv run --locked cdk promote dev prod
     when:
       event: promote
       target: prod

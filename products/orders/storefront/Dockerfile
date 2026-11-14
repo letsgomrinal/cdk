@@ -1,9 +1,10 @@
 FROM node:22-alpine AS build
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+# Lockfile only: --frozen-lockfile fails the build if pnpm-lock.yaml is stale.
+COPY package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm@12.16.1 && pnpm install --frozen-lockfile
 COPY . .
-RUN npm run build
+RUN pnpm build
 
 FROM node:22-alpine
 WORKDIR /app

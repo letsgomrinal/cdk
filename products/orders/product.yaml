@@ -1,5 +1,7 @@
+# yaml-language-server: $schema=../../platform/schema/product.schema.json
+#
 # Infra for product "orders". This file is the whole definition:
-# add/remove components here (or with `tools/cdk add|remove`), then run `tools/cdk sync`.
+# add/remove components here (or with `cdk add|remove`), then run `cdk sync`.
 # Reference: docs/PRODUCT_YAML.md
 product: orders
 team: commerce
@@ -9,14 +11,14 @@ components:
   storefront:
     kind: web
     template: nextjs
-    public: true          # internet-facing; delete this line to keep it internal
-    calls: [backend]      # may invoke `backend`; its URL is injected as BACKEND_URL
+    public: true # internet-facing; delete this line to keep it internal
+    calls: [backend] # may invoke `backend`; its URL is injected as BACKEND_URL
 
   backend:
     kind: api
     template: fastapi
     memory: 1Gi
-    secret_env: { DB_URL: orders-db-url }    # access to the secret is granted automatically
+    secret_env: { DB_URL: orders-db-url } # access to the secret is granted automatically
     access: { publish: [orders-events] }
 
   nightly-export:

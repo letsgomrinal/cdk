@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "redhat.vscode-yaml",
+    "charliermarsh.ruff",
+    "detachhead.basedpyright",
+    "biomejs.biome",
+    "hashicorp.terraform",
+    "editorconfig.editorconfig"
+  ],
+  "unwantedRecommendations": ["ms-python.black-formatter", "ms-python.isort", "esbenp.prettier-vscode"]
+}

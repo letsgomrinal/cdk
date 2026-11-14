@@ -1,0 +1,5 @@
+# JS components share one pnpm store and root tooling (biome), but each keeps its
+# own pnpm-lock.yaml because each is its own Docker build context.
+packages:
+  - "products/*/*"
+sharedWorkspaceLockfile: false
