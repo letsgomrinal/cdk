@@ -11,39 +11,61 @@ header. `cdk` validates against the same schema, and so does Terraform's
 
 ```yaml
 product: orders            # 2-10 chars, [a-z][a-z0-9]*, prefixes every name
-team: commerce
+team: commerce             # GitHub team slug: CODEOWNERS + labels
 envs: [dev, prod]          # subset of platform.yaml envs; one Atlantis project each
 # region: us-central1      # default: platform.yaml region
 # projects: { dev: legacy-orders-dev }   # default: {org}-{product}-{env}
 # labels: { cost-center: cc-123 }
 
-components:
-  <name>:                  # 1-15 chars, [a-z0-9-]; also the code folder name
-    kind: web | api | job | worker | function
-    template: nextjs       # which scaffold `cdk add` used (informational)
-    ...settings for that kind...
+apps:                      # one section per deployment type
+  storefront:              # component name: unique in the product
+    template: nextjs
+    public: true
+apis:
+  backend: { memory: 1Gi }
+jobs:
+  nightly-export: { schedules: { daily: { cron: "0 2 * * *" } } }
+workers: {}
+functions: {}
 
-overrides:                 # per-env, per-component, shallow merge
+overrides:                 # overrides.<env>.<section>.<name>, shallow merge
   prod:
-    backend: { min_instances: 2 }
+    apis:
+      backend: { min_instances: 2 }
 ```
 
-## Kinds
+## Deployment types
 
-| kind | Becomes | Templates | Typical use |
-|---|---|---|---|
-| `web` | Cloud Run service | `nextjs`, `react` | frontends (Next.js SSR, React SPA via nginx) |
-| `api` | Cloud Run service | `fastapi` | backends, internal by default |
-| `job` | Cloud Run job (+ Scheduler) | `python-job` | batch, cron, run-to-completion |
-| `worker` | Cloud Run worker pool | `python-worker` | always-on queue/stream consumers |
-| `function` | Cloud Run function (+ Eventarc) | `python-function` | react to GCS / Pub/Sub / audit-log events |
+**The section is the type.** A component under `jobs:` is a job, and its code lives in
+`products/<product>/jobs/<name>/`. The folder tree and `product.yaml` always mirror each other:
 
-Resource and service account name: `{product}-{name}-{svc|job|wp|fn}`.
-See [CONVENTIONS.md](CONVENTIONS.md).
+```
+products/orders/
+  product.yaml
+  apps/storefront/        apis/backend/
+  jobs/nightly-export/    jobs/reconcile/
+  workers/email-sender/   functions/gcs-ingest/
+  deploy/                 generated, don't edit
+```
+
+| Section | `cdk add` kind | Becomes | Templates | Use for |
+|---|---|---|---|---|
+| `apps` | `app` | Cloud Run service | `nextjs`, `react` | frontends (Next.js SSR, React SPA via nginx) |
+| `apis` | `api` | Cloud Run service | `fastapi` | HTTP backends, internal by default |
+| `jobs` | `job` | Cloud Run job (+ Scheduler) | `python-job` | batch, cron, run-to-completion |
+| `workers` | `worker` | Cloud Run worker pool | `python-worker` | always-on queue/stream consumers |
+| `functions` | `function` | Cloud Run function (+ Eventarc) | `python-function` | react to GCS / Pub/Sub / audit-log events |
+
+Rules:
+
+* **Component names are unique across the whole product**, not just within a section, because
+  `calls:`, `invokers:` and release target them by name.
+* **Resource and service account name:** `{product}-{name}-{svc|job|wp|fn}`. See [CONVENTIONS.md](CONVENTIONS.md).
+* Every section is optional. A new product lists all five as `{}`, so you can see what's available.
 
 ## Settings
 
-**Every kind**
+**Every type**
 
 | key | example | notes |
 |---|---|---|
@@ -54,7 +76,7 @@ See [CONVENTIONS.md](CONVENTIONS.md).
 | `calls` | `[backend]` | see *Calling other components* |
 | `use_vpc` | `false` | opt out of the env's VPC egress |
 
-**web / api** add `public`, `port` (8080), `min_instances` (0), `max_instances` (10), `concurrency` (80),
+**apps / apis** add `public`, `port` (8080), `min_instances` (0), `max_instances` (10), `concurrency` (80),
 `timeout` (`300s`), `cpu_idle` (true), `ingress`, `invokers`, `image`, `command`, `args`.
 
 **job** adds `task_count`, `parallelism`, `max_retries`, `timeout` (`600s`), `command`, `args`,
@@ -98,8 +120,7 @@ access:
 ## Calling other components
 
 ```yaml
-storefront:
-  kind: web
+storefront:               # under apps:
   calls: [backend]        # storefront's SA gets run.invoker on backend; BACKEND_URL is injected
 ```
 
@@ -130,7 +151,7 @@ a load balancer with IAP instead.
 
 | Change | Do | Then |
 |---|---|---|
-| add | `cdk add orders job cleanup` | PR → Atlantis plan creates SA + job; merge → Drone deploys code |
+| add | `cdk add orders job cleanup` (creates `jobs.cleanup` + `jobs/cleanup/`) | PR → Atlantis plan creates SA + job; merge → Drone deploys code |
 | remove | `cdk remove orders cleanup` | PR → Atlantis plan destroys it (prod: deletion protection must be lifted for that apply) |
 | change settings | edit product.yaml | PR → Atlantis plan |
 | change code | edit the component folder | merge → Drone builds & deploys only that component |

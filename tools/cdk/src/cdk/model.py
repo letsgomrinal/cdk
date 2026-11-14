@@ -16,23 +16,26 @@ COMPONENT_RE = re.compile(r"^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$")
 
 @dataclass(frozen=True)
 class Kind:
-    name: str
+    name: str  # singular, used on the CLI: `cdk add orders job nightly`
+    section: str  # product.yaml section and folder: products/<p>/<section>/<name>/
     type: str  # Cloud Run resource type
     code: str  # suffix in resource / SA names
     templates: tuple[str, ...]  # first is the default
-    language: str
+    description: str
 
 
+# Order here is the order of sections in product.yaml and in `cdk list`.
 KINDS: dict[str, Kind] = {
     k.name: k
     for k in [
-        Kind("web", "service", "svc", ("nextjs", "react"), "node"),
-        Kind("api", "service", "svc", ("fastapi",), "python"),
-        Kind("job", "job", "job", ("python-job",), "python"),
-        Kind("worker", "worker-pool", "wp", ("python-worker",), "python"),
-        Kind("function", "function", "fn", ("python-function",), "python"),
+        Kind("app", "apps", "service", "svc", ("nextjs", "react"), "frontend web app"),
+        Kind("api", "apis", "service", "svc", ("fastapi",), "HTTP backend"),
+        Kind("job", "jobs", "job", "job", ("python-job",), "run-to-completion task, optionally scheduled"),
+        Kind("worker", "workers", "worker-pool", "wp", ("python-worker",), "always-on queue/stream consumer"),
+        Kind("function", "functions", "function", "fn", ("python-function",), "event-triggered handler"),
     ]
 }
+SECTIONS: dict[str, Kind] = {k.section: k for k in KINDS.values()}
 
 
 class CdkError(Exception):
@@ -57,12 +60,9 @@ def find_root(start: Path | None = None) -> Path:
 @dataclass
 class Component:
     product: Product
+    kind: Kind
     name: str
     spec: dict[str, Any]
-
-    @property
-    def kind(self) -> Kind:
-        return KINDS[self.spec["kind"]]
 
     @property
     def workload(self) -> str:
@@ -70,7 +70,7 @@ class Component:
 
     @property
     def path(self) -> Path:
-        return self.product.path / self.name
+        return self.product.path / self.kind.section / self.name
 
     @property
     def language(self) -> str | None:
@@ -161,8 +161,13 @@ class Repo:
                 raise CdkError(f"{repo.rel(f)}: product '{prod.name}' must live in products/{prod.name}/")
             if prod.name in repo.products:
                 raise CdkError(f"product '{prod.name}' is defined twice ({repo.rel(f)})")
-            prod.components = {
-                n: Component(product=prod, name=n, spec=c or {}) for n, c in (spec.get("components") or {}).items()
-            }
+            for kind in KINDS.values():
+                for n, c in (spec.get(kind.section) or {}).items():
+                    if n in prod.components:
+                        other = prod.components[n].kind.section
+                        raise CdkError(
+                            f"{repo.rel(f)}: '{n}' is in both {other} and {kind.section}; names must be unique"
+                        )
+                    prod.components[n] = Component(product=prod, kind=kind, name=n, spec=c or {})
             repo.products[prod.name] = prod
         return repo

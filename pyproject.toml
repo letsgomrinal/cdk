@@ -21,7 +21,7 @@ package = false
 members = ["tools/cdk"]
 # Product components are standalone uv projects with their own uv.lock, because
 # each one is its own Docker build context.
-exclude = ["products/*/*", "platform/templates/components/*"]
+exclude = ["products/*/*/*", "platform/templates/components/*"]
 
 [tool.uv.sources]
 cdk = { workspace = true }

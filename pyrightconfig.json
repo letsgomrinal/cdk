@@ -15,33 +15,33 @@
   "venv": ".venv",
   "executionEnvironments": [
     {
-      "root": "products/orders/backend",
+      "root": "products/orders/apis/backend",
       "extraPaths": [
-        "products/orders/backend/.venv/lib/python3.13/site-packages"
+        "products/orders/apis/backend/.venv/lib/python3.13/site-packages"
       ]
     },
     {
-      "root": "products/orders/nightly-export",
+      "root": "products/orders/jobs/nightly-export",
       "extraPaths": [
-        "products/orders/nightly-export/.venv/lib/python3.13/site-packages"
+        "products/orders/jobs/nightly-export/.venv/lib/python3.13/site-packages"
       ]
     },
     {
-      "root": "products/orders/reconcile",
+      "root": "products/orders/jobs/reconcile",
       "extraPaths": [
-        "products/orders/reconcile/.venv/lib/python3.13/site-packages"
+        "products/orders/jobs/reconcile/.venv/lib/python3.13/site-packages"
       ]
     },
     {
-      "root": "products/orders/email-sender",
+      "root": "products/orders/workers/email-sender",
       "extraPaths": [
-        "products/orders/email-sender/.venv/lib/python3.13/site-packages"
+        "products/orders/workers/email-sender/.venv/lib/python3.13/site-packages"
       ]
     },
     {
-      "root": "products/orders/gcs-ingest",
+      "root": "products/orders/functions/gcs-ingest",
       "extraPaths": [
-        "products/orders/gcs-ingest/.venv/lib/python3.13/site-packages"
+        "products/orders/functions/gcs-ingest/.venv/lib/python3.13/site-packages"
       ]
     },
     {

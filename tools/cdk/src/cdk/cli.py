@@ -1,7 +1,7 @@
 """cdk: the monorepo CLI.
 
-cdk new <product>                    interactive: pick web / api / jobs / workers / functions
-cdk new <product> --team T --add web:storefront:nextjs --add job:nightly-export
+cdk new <product>                    interactive: pick apps / apis / jobs / workers / functions
+cdk new <product> --team T --add app:storefront:nextjs --add job:nightly-export
 cdk add <product> <kind> <name> [--template T]
 cdk remove <product> <name> [--keep-code] [-y]
 cdk list
@@ -57,9 +57,9 @@ def cmd_new(a: argparse.Namespace) -> None:
         log(f"New product '{a.product}'. Press enter to skip a question.\n")
         team = ask("Owning team (GitHub team slug)")
         envs = [e.strip() for e in ask("Environments", ",".join(envs)).split(",") if e.strip()]
-        web = ask("Web frontend? (nextjs / react / no)", "no")
-        if web != "no":
-            adds.append(("web", ask("  name", "web"), web))
+        app = ask("Frontend app? (nextjs / react / no)", "no")
+        if app != "no":
+            adds.append(("app", ask("  name", "web"), app))
         api = ask("API backend? (fastapi / no)", "no")
         if api != "no":
             adds.append(("api", ask("  name", "api"), api))
@@ -100,7 +100,7 @@ def cmd_list(_: argparse.Namespace) -> None:
     for p in repo.products.values():
         log(f"{p.name}  (team {p.team}; envs {', '.join(p.envs)})  {repo.rel(p.path)}")
         for c in p.components.values():
-            log(f"  {c.name:16} {c.kind.name:9} -> {c.kind.type:12} {c.workload}")
+            log(f"  {c.kind.section + '/' + c.name:26} {c.kind.type:12} {c.workload}")
 
 
 def cmd_sync(a: argparse.Namespace) -> None:
@@ -168,7 +168,7 @@ def parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("add", help="add a component to a product")
     p.add_argument("product")
-    p.add_argument("kind", choices=list(KINDS))
+    p.add_argument("kind", choices=list(KINDS), help="; ".join(f"{k.name}: {k.description}" for k in KINDS.values()))
     p.add_argument("name")
     p.add_argument("--template", help="; ".join(f"{k}: {'|'.join(v.templates)}" for k, v in KINDS.items()))
     p.add_argument("--no-lock", action="store_true")

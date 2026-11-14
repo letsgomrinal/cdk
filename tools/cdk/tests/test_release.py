@@ -6,14 +6,15 @@ from conftest import git, quiet
 
 def test_release_builds_and_deploys_changed_components_only(orders: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
     base = git(orders.root, "rev-parse", "HEAD").strip()
-    (orders.root / "products/orders/mailer/main.py").write_text("print('v2')\n")
+    (orders.root / "products/orders/workers/mailer/main.py").write_text("print('v2')\n")
     git(orders.root, "commit", "-qam", "v2")
     monkeypatch.setenv("DRONE_COMMIT_SHA", "a" * 40)
 
     run = release(Repo.load(orders.root), "dev", quiet, since=base, dry_run=True)
     image = "europe-west1-docker.pkg.dev/acme-artifacts/products/orders/mailer:aaaaaaaaaaaa"
     assert run.commands == [
-        ["gcloud", "builds", "submit", "products/orders/mailer", "--tag", image, "--project", "acme-cicd", "--quiet"],
+        ["gcloud", "builds", "submit", "products/orders/workers/mailer", "--tag", image,
+         "--project", "acme-cicd", "--quiet"],
         ["gcloud", "beta", "run", "worker-pools", "deploy", "orders-mailer-wp", "--image", image,
          "--project", "acme-orders-dev", "--region", "europe-west1", "--quiet"],
     ]  # fmt: skip

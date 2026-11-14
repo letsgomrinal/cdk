@@ -8,16 +8,18 @@ from conftest import REAL_ROOT
 PLATFORM = {"envs": {"dev": {}, "prod": {}}}
 
 
-def spec(**components: dict) -> dict:
-    return {"product": "orders", "team": "t", "envs": ["dev"], "components": components}
+def spec(**sections: dict | None) -> dict:
+    return {"product": "orders", "team": "t", "envs": ["dev"], **sections}
 
 
 def test_valid_spec_passes() -> None:
     validate_product(
         spec(
-            api={"kind": "api", "memory": "1Gi", "access": {"buckets": {"b": "write"}}, "calls": ["web"]},
-            web={"kind": "web", "public": True},
-            job={"kind": "job", "schedules": {"d": {"cron": "0 2 * * *", "args": ["x"]}}},
+            apps={"web": {"public": True, "calls": ["api"]}},
+            apis={"api": {"memory": "1Gi", "access": {"buckets": {"b": "write"}}}},
+            jobs={"job": {"schedules": {"d": {"cron": "0 2 * * *", "args": ["x"]}}}, "bare": None},
+            workers=None,
+            overrides={"prod": {"apis": {"api": {"min_instances": 2}}}},
         ),
         PLATFORM,
         "x",
@@ -25,22 +27,24 @@ def test_valid_spec_passes() -> None:
 
 
 @pytest.mark.parametrize(
-    ("component", "expected"),
+    ("sections", "expected"),
     [
-        ({"kind": "api", "memroy": "1Gi"}, "unknown key 'memroy' for kind api"),
-        ({"kind": "job", "public": True}, "unknown key 'public' for kind job"),
-        ({"kind": "lambda"}, "'lambda' is not one of"),
-        ({"kind": "api", "memory": "1GB"}, "does not match"),
-        ({"kind": "job", "access": {"buckets": {"b": "owner"}}}, "'owner' is not one of"),
+        ({"apis": {"c": {"memroy": "1Gi"}}}, "apis.c: unknown key 'memroy' for apis"),
+        ({"jobs": {"c": {"public": True}}}, "jobs.c: unknown key 'public' for jobs"),
+        ({"apis": {"c": {"kind": "api"}}}, "unknown key 'kind'"),
+        ({"lambdas": {"c": {}}}, "(top level): unknown key 'lambdas'"),
+        ({"apis": {"c": {"memory": "1GB"}}}, "does not match"),
+        ({"jobs": {"c": {"access": {"buckets": {"b": "owner"}}}}}, "'owner' is not one of"),
+        ({"overrides": {"prod": {"jobs": {"c": {"template": "x"}}}}}, "unknown key 'template'"),
     ],
 )
-def test_errors_name_the_problem(component: dict, expected: str) -> None:
+def test_errors_name_the_problem(sections: dict, expected: str) -> None:
     with pytest.raises(CdkError, match=re.escape(expected)):
-        validate_product(spec(c=component), PLATFORM, "x")
+        validate_product(spec(**sections), PLATFORM, "x")
 
 
 def test_unknown_env_and_bad_names() -> None:
-    bad = {"product": "Orders-1", "team": "t", "envs": ["stage"], "components": {"Bad_Name": {"kind": "api"}}}
+    bad = {"product": "Orders-1", "team": "t", "envs": ["stage"], "apis": {"Bad_Name": {}}}
     with pytest.raises(CdkError) as e:
         validate_product(bad, PLATFORM, "x")
     msg = str(e.value)
@@ -55,7 +59,7 @@ def _hcl_list(text: str, name: str) -> list[str]:
     return re.findall(r'"([a-z_]+)"', m.group(1))
 
 
-def test_schema_matches_terraform_allowed_keys() -> None:
+def test_schema_matches_terraform_module() -> None:
     """platform/terraform/modules/product-spec must accept exactly what the schema allows."""
     tf = (REAL_ROOT / "platform/terraform/modules/product-spec/main.tf").read_text()
     common = _hcl_list(tf, "common_keys")
@@ -65,6 +69,7 @@ def test_schema_matches_terraform_allowed_keys() -> None:
         line = next(ln for ln in block.group(1).splitlines() if ln.strip().startswith((f"{typ} ", f'"{typ}"')))
         tf_keys = set(common) | set(_hcl_list(line, line.split("=")[0].strip()))
         assert tf_keys == set(keys), f"{typ}: terraform={sorted(tf_keys)} schema={sorted(keys)}"
-    tf_kinds = re.search(r"kinds = \{(.*?)\}", tf, re.S)
-    assert tf_kinds
-    assert set(re.findall(r"(\w+)\s*=", tf_kinds.group(1))) == set(KINDS)
+    sections = re.search(r"sections = \{(.*?)\}", tf, re.S)
+    assert sections
+    tf_sections = dict(re.findall(r'(\w+)\s*=\s*"([\w-]+)"', sections.group(1)))
+    assert tf_sections == {k.section: k.type for k in KINDS.values()}

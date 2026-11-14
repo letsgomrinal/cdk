@@ -12,7 +12,7 @@ from typing import Any
 
 from jsonschema import Draft7Validator
 
-from cdk.model import COMPONENT_RE, KINDS, PRODUCT_RE, CdkError
+from cdk.model import COMPONENT_RE, KINDS, PRODUCT_RE, SECTIONS, CdkError
 
 STR_LIST: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
 POS_INT: dict[str, Any] = {"type": "integer", "minimum": 0}
@@ -20,10 +20,6 @@ DURATION: dict[str, Any] = {"type": "string", "pattern": r"^[0-9]+s$", "descript
 
 # Every setting a component can have. Which kinds allow which key is in KIND_KEYS.
 PROPERTIES: dict[str, dict[str, Any]] = {
-    "kind": {
-        "enum": list(KINDS),
-        "description": "web | api -> Cloud Run service; job; worker -> worker pool; function",
-    },
     "template": {
         "enum": sorted({t for k in KINDS.values() for t in k.templates}),
         "description": "Scaffold used by `cdk add` (informational)",
@@ -113,7 +109,7 @@ PROPERTIES: dict[str, dict[str, Any]] = {
     },
 }
 
-COMMON = ["kind", "template", "env", "secret_env", "cpu", "memory", "use_vpc", "access", "calls"]
+COMMON = ["template", "env", "secret_env", "cpu", "memory", "use_vpc", "access", "calls"]
 CONTAINER = ["image", "command", "args"]
 HTTP = ["public", "ingress", "min_instances", "max_instances", "concurrency", "timeout", "invokers"]
 
@@ -130,24 +126,44 @@ def kind_keys(kind: str) -> list[str]:
     return TYPE_KEYS[KINDS[kind].type]
 
 
+def _component(keys: list[str], description: str) -> dict[str, Any]:
+    return {
+        "type": ["object", "null"],
+        "description": description,
+        "additionalProperties": False,
+        "properties": {k: PROPERTIES[k] for k in keys},
+    }
+
+
 def build_schema(envs: list[str]) -> dict[str, Any]:
     env_enum = {"enum": envs} if envs else {"type": "string"}
-    component: dict[str, Any] = {
-        "type": "object",
-        "required": ["kind"],
-        "properties": PROPERTIES,  # union, for autocomplete
-        "allOf": [
-            {
-                "if": {"properties": {"kind": {"const": k}}, "required": ["kind"]},
-                "then": {"propertyNames": {"enum": kind_keys(k)}},
-            }
-            for k in KINDS
-        ],
+    name = {"pattern": COMPONENT_RE.pattern}
+    sections = {
+        k.section: {
+            "type": ["object", "null"],
+            "description": f"{k.section.capitalize()}: {k.description} (Cloud Run {k.type}). "
+            f"Code in products/<product>/{k.section}/<name>/",
+            "propertyNames": name,
+            "additionalProperties": _component(kind_keys(k.name), f"A {k.name}: {k.description}"),
+        }
+        for k in KINDS.values()
     }
-    override = {
+    overrides = {
         "type": "object",
-        "propertyNames": {"not": {"const": "kind"}},
-        "properties": {k: v for k, v in PROPERTIES.items() if k != "kind"},
+        "propertyNames": env_enum,
+        "description": "Per-env tweaks, shallow-merged: overrides.<env>.<section>.<name>",
+        "additionalProperties": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                k.section: {
+                    "type": "object",
+                    "propertyNames": name,
+                    "additionalProperties": _component([x for x in kind_keys(k.name) if x != "template"], k.name),
+                }
+                for k in KINDS.values()
+            },
+        },
     }
     return {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -173,17 +189,8 @@ def build_schema(envs: list[str]) -> dict[str, Any]:
                 "description": "Per-env project ID if not {org}-{product}-{env}",
             },
             "labels": {"type": "object", "additionalProperties": {"type": "string"}},
-            "components": {
-                "type": "object",
-                "propertyNames": {"pattern": COMPONENT_RE.pattern},
-                "additionalProperties": component,
-            },
-            "overrides": {
-                "type": "object",
-                "propertyNames": env_enum,
-                "additionalProperties": {"type": "object", "additionalProperties": override},
-                "description": "Per-env, per-component settings, shallow-merged",
-            },
+            **sections,
+            "overrides": overrides,
         },
     }
 
@@ -200,11 +207,12 @@ def validate_product(spec: Any, platform: dict[str, Any], where: str) -> None:
     for e in sorted(Draft7Validator(schema).iter_errors(spec), key=lambda e: list(map(str, e.absolute_path))):
         path = ".".join(str(p) for p in e.absolute_path) or "(top level)"
         msg = e.message
-        if e.validator == "enum" and "propertyNames" in e.schema_path:
-            msg = f"unknown key {e.instance!r}"
-            parent = _at(spec, list(e.absolute_path))
-            if isinstance(parent, dict) and parent.get("kind"):
-                msg += f" for kind {parent['kind']} (see docs/PRODUCT_YAML.md)"
+        if e.validator == "additionalProperties" and isinstance(e.instance, dict):
+            allowed = set(e.schema.get("properties", {}))
+            unknown = [k for k in e.instance if k not in allowed]
+            msg = "unknown key" + ("s " if len(unknown) > 1 else " ") + ", ".join(repr(k) for k in unknown)
+            if len(e.absolute_path) == 2 and e.absolute_path[0] in SECTIONS:
+                msg += f" for {SECTIONS[str(e.absolute_path[0])].section} (see docs/PRODUCT_YAML.md)"
         errors.append(f"{path}: {msg}")
     if errors:
         raise CdkError(f"{where}:\n  - " + "\n  - ".join(dict.fromkeys(errors)))

@@ -53,27 +53,23 @@
         "type": "string"
       }
     },
-    "components": {
-      "type": "object",
+    "apps": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Apps: frontend web app (Cloud Run service). Code in products/<product>/apps/<name>/",
       "propertyNames": {
         "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
       },
       "additionalProperties": {
-        "type": "object",
-        "required": [
-          "kind"
+        "type": [
+          "object",
+          "null"
         ],
+        "description": "A app: frontend web app",
+        "additionalProperties": false,
         "properties": {
-          "kind": {
-            "enum": [
-              "web",
-              "api",
-              "job",
-              "worker",
-              "function"
-            ],
-            "description": "web | api -> Cloud Run service; job; worker -> worker pool; function"
-          },
           "template": {
             "enum": [
               "fastapi",
@@ -118,13 +114,6 @@
           "use_vpc": {
             "type": "boolean",
             "description": "Attach the env's VPC egress (default true)"
-          },
-          "calls": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
           },
           "access": {
             "type": "object",
@@ -182,6 +171,13 @@
               }
             }
           },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+          },
           "image": {
             "type": "string",
             "description": "Initial image only; releases set the image afterwards"
@@ -201,11 +197,6 @@
           "public": {
             "type": "boolean",
             "description": "Internet-facing: ingress ALL + allUsers invoker"
-          },
-          "port": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 65535
           },
           "ingress": {
             "enum": [
@@ -231,9 +222,193 @@
             "pattern": "^[0-9]+s$",
             "description": "Seconds, e.g. 300s"
           },
+          "invokers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Who may call this: component names or IAM members"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
           "cpu_idle": {
             "type": "boolean",
             "description": "CPU only during requests (default true)"
+          }
+        }
+      }
+    },
+    "apis": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Apis: HTTP backend (Cloud Run service). Code in products/<product>/apis/<name>/",
+      "propertyNames": {
+        "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "A api: HTTP backend",
+        "additionalProperties": false,
+        "properties": {
+          "template": {
+            "enum": [
+              "fastapi",
+              "nextjs",
+              "python-function",
+              "python-job",
+              "python-worker",
+              "react"
+            ],
+            "description": "Scaffold used by `cdk add` (informational)"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+          },
+          "secret_env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+          },
+          "cpu": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "vCPUs, e.g. \"1\", \"2\""
+          },
+          "memory": {
+            "type": "string",
+            "pattern": "^[0-9]+(Mi|Gi)$",
+            "description": "e.g. 512Mi, 1Gi"
+          },
+          "use_vpc": {
+            "type": "boolean",
+            "description": "Attach the env's VPC egress (default true)"
+          },
+          "access": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Resource-level IAM for this component's service account",
+            "properties": {
+              "secrets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "secretAccessor on each secret"
+              },
+              "buckets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "admin"
+                  ]
+                },
+                "description": "bucket: read | write | admin"
+              },
+              "publish": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.publisher on each topic"
+              },
+              "subscribe": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.subscriber on each subscription"
+              },
+              "bigquery_datasets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                },
+                "description": "\"dataset\" or \"project:dataset\": read | write"
+              },
+              "project_roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Escape hatch: project-wide roles (reviewed)"
+              }
+            }
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+          },
+          "image": {
+            "type": "string",
+            "description": "Initial image only; releases set the image afterwards"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "public": {
+            "type": "boolean",
+            "description": "Internet-facing: ingress ALL + allUsers invoker"
+          },
+          "ingress": {
+            "enum": [
+              "INGRESS_TRAFFIC_ALL",
+              "INGRESS_TRAFFIC_INTERNAL_ONLY",
+              "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+            ]
+          },
+          "min_instances": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_instances": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "concurrency": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timeout": {
+            "type": "string",
+            "pattern": "^[0-9]+s$",
+            "description": "Seconds, e.g. 300s"
           },
           "invokers": {
             "type": "array",
@@ -241,6 +416,159 @@
               "type": "string"
             },
             "description": "Who may call this: component names or IAM members"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "cpu_idle": {
+            "type": "boolean",
+            "description": "CPU only during requests (default true)"
+          }
+        }
+      }
+    },
+    "jobs": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Jobs: run-to-completion task, optionally scheduled (Cloud Run job). Code in products/<product>/jobs/<name>/",
+      "propertyNames": {
+        "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "A job: run-to-completion task, optionally scheduled",
+        "additionalProperties": false,
+        "properties": {
+          "template": {
+            "enum": [
+              "fastapi",
+              "nextjs",
+              "python-function",
+              "python-job",
+              "python-worker",
+              "react"
+            ],
+            "description": "Scaffold used by `cdk add` (informational)"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+          },
+          "secret_env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+          },
+          "cpu": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "vCPUs, e.g. \"1\", \"2\""
+          },
+          "memory": {
+            "type": "string",
+            "pattern": "^[0-9]+(Mi|Gi)$",
+            "description": "e.g. 512Mi, 1Gi"
+          },
+          "use_vpc": {
+            "type": "boolean",
+            "description": "Attach the env's VPC egress (default true)"
+          },
+          "access": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Resource-level IAM for this component's service account",
+            "properties": {
+              "secrets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "secretAccessor on each secret"
+              },
+              "buckets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "admin"
+                  ]
+                },
+                "description": "bucket: read | write | admin"
+              },
+              "publish": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.publisher on each topic"
+              },
+              "subscribe": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.subscriber on each subscription"
+              },
+              "bigquery_datasets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                },
+                "description": "\"dataset\" or \"project:dataset\": read | write"
+              },
+              "project_roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Escape hatch: project-wide roles (reviewed)"
+              }
+            }
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+          },
+          "image": {
+            "type": "string",
+            "description": "Initial image only; releases set the image afterwards"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "task_count": {
             "type": "integer",
@@ -253,6 +581,11 @@
           "max_retries": {
             "type": "integer",
             "minimum": 0
+          },
+          "timeout": {
+            "type": "string",
+            "pattern": "^[0-9]+s$",
+            "description": "Seconds, e.g. 300s"
           },
           "schedules": {
             "type": "object",
@@ -284,11 +617,318 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "workers": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Workers: always-on queue/stream consumer (Cloud Run worker-pool). Code in products/<product>/workers/<name>/",
+      "propertyNames": {
+        "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "A worker: always-on queue/stream consumer",
+        "additionalProperties": false,
+        "properties": {
+          "template": {
+            "enum": [
+              "fastapi",
+              "nextjs",
+              "python-function",
+              "python-job",
+              "python-worker",
+              "react"
+            ],
+            "description": "Scaffold used by `cdk add` (informational)"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+          },
+          "secret_env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+          },
+          "cpu": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "vCPUs, e.g. \"1\", \"2\""
+          },
+          "memory": {
+            "type": "string",
+            "pattern": "^[0-9]+(Mi|Gi)$",
+            "description": "e.g. 512Mi, 1Gi"
+          },
+          "use_vpc": {
+            "type": "boolean",
+            "description": "Attach the env's VPC egress (default true)"
+          },
+          "access": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Resource-level IAM for this component's service account",
+            "properties": {
+              "secrets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "secretAccessor on each secret"
+              },
+              "buckets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "admin"
+                  ]
+                },
+                "description": "bucket: read | write | admin"
+              },
+              "publish": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.publisher on each topic"
+              },
+              "subscribe": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.subscriber on each subscription"
+              },
+              "bigquery_datasets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                },
+                "description": "\"dataset\" or \"project:dataset\": read | write"
+              },
+              "project_roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Escape hatch: project-wide roles (reviewed)"
+              }
+            }
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+          },
+          "image": {
+            "type": "string",
+            "description": "Initial image only; releases set the image afterwards"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "instances": {
             "type": "integer",
             "minimum": 0,
             "description": "Worker pool instance count"
+          }
+        }
+      }
+    },
+    "functions": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Functions: event-triggered handler (Cloud Run function). Code in products/<product>/functions/<name>/",
+      "propertyNames": {
+        "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "A function: event-triggered handler",
+        "additionalProperties": false,
+        "properties": {
+          "template": {
+            "enum": [
+              "fastapi",
+              "nextjs",
+              "python-function",
+              "python-job",
+              "python-worker",
+              "react"
+            ],
+            "description": "Scaffold used by `cdk add` (informational)"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+          },
+          "secret_env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+          },
+          "cpu": {
+            "type": [
+              "string",
+              "number"
+            ],
+            "description": "vCPUs, e.g. \"1\", \"2\""
+          },
+          "memory": {
+            "type": "string",
+            "pattern": "^[0-9]+(Mi|Gi)$",
+            "description": "e.g. 512Mi, 1Gi"
+          },
+          "use_vpc": {
+            "type": "boolean",
+            "description": "Attach the env's VPC egress (default true)"
+          },
+          "access": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Resource-level IAM for this component's service account",
+            "properties": {
+              "secrets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "secretAccessor on each secret"
+              },
+              "buckets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "admin"
+                  ]
+                },
+                "description": "bucket: read | write | admin"
+              },
+              "publish": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.publisher on each topic"
+              },
+              "subscribe": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.subscriber on each subscription"
+              },
+              "bigquery_datasets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                },
+                "description": "\"dataset\" or \"project:dataset\": read | write"
+              },
+              "project_roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Escape hatch: project-wide roles (reviewed)"
+              }
+            }
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+          },
+          "public": {
+            "type": "boolean",
+            "description": "Internet-facing: ingress ALL + allUsers invoker"
+          },
+          "ingress": {
+            "enum": [
+              "INGRESS_TRAFFIC_ALL",
+              "INGRESS_TRAFFIC_INTERNAL_ONLY",
+              "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+            ]
+          },
+          "min_instances": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_instances": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "concurrency": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timeout": {
+            "type": "string",
+            "pattern": "^[0-9]+s$",
+            "description": "Seconds, e.g. 300s"
+          },
+          "invokers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Who may call this: component names or IAM members"
           },
           "triggers": {
             "type": "object",
@@ -319,188 +959,7 @@
               }
             }
           }
-        },
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "kind": {
-                  "const": "web"
-                }
-              },
-              "required": [
-                "kind"
-              ]
-            },
-            "then": {
-              "propertyNames": {
-                "enum": [
-                  "kind",
-                  "template",
-                  "env",
-                  "secret_env",
-                  "cpu",
-                  "memory",
-                  "use_vpc",
-                  "access",
-                  "calls",
-                  "image",
-                  "command",
-                  "args",
-                  "public",
-                  "ingress",
-                  "min_instances",
-                  "max_instances",
-                  "concurrency",
-                  "timeout",
-                  "invokers",
-                  "port",
-                  "cpu_idle"
-                ]
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "kind": {
-                  "const": "api"
-                }
-              },
-              "required": [
-                "kind"
-              ]
-            },
-            "then": {
-              "propertyNames": {
-                "enum": [
-                  "kind",
-                  "template",
-                  "env",
-                  "secret_env",
-                  "cpu",
-                  "memory",
-                  "use_vpc",
-                  "access",
-                  "calls",
-                  "image",
-                  "command",
-                  "args",
-                  "public",
-                  "ingress",
-                  "min_instances",
-                  "max_instances",
-                  "concurrency",
-                  "timeout",
-                  "invokers",
-                  "port",
-                  "cpu_idle"
-                ]
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "kind": {
-                  "const": "job"
-                }
-              },
-              "required": [
-                "kind"
-              ]
-            },
-            "then": {
-              "propertyNames": {
-                "enum": [
-                  "kind",
-                  "template",
-                  "env",
-                  "secret_env",
-                  "cpu",
-                  "memory",
-                  "use_vpc",
-                  "access",
-                  "calls",
-                  "image",
-                  "command",
-                  "args",
-                  "task_count",
-                  "parallelism",
-                  "max_retries",
-                  "timeout",
-                  "schedules"
-                ]
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "kind": {
-                  "const": "worker"
-                }
-              },
-              "required": [
-                "kind"
-              ]
-            },
-            "then": {
-              "propertyNames": {
-                "enum": [
-                  "kind",
-                  "template",
-                  "env",
-                  "secret_env",
-                  "cpu",
-                  "memory",
-                  "use_vpc",
-                  "access",
-                  "calls",
-                  "image",
-                  "command",
-                  "args",
-                  "instances"
-                ]
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "kind": {
-                  "const": "function"
-                }
-              },
-              "required": [
-                "kind"
-              ]
-            },
-            "then": {
-              "propertyNames": {
-                "enum": [
-                  "kind",
-                  "template",
-                  "env",
-                  "secret_env",
-                  "cpu",
-                  "memory",
-                  "use_vpc",
-                  "access",
-                  "calls",
-                  "public",
-                  "ingress",
-                  "min_instances",
-                  "max_instances",
-                  "concurrency",
-                  "timeout",
-                  "invokers",
-                  "triggers"
-                ]
-              }
-            }
-          }
-        ]
+        }
       }
     },
     "overrides": {
@@ -511,265 +970,847 @@
           "prod"
         ]
       },
+      "description": "Per-env tweaks, shallow-merged: overrides.<env>.<section>.<name>",
       "additionalProperties": {
         "type": "object",
-        "additionalProperties": {
-          "type": "object",
-          "propertyNames": {
-            "not": {
-              "const": "kind"
-            }
-          },
-          "properties": {
-            "template": {
-              "enum": [
-                "fastapi",
-                "nextjs",
-                "python-function",
-                "python-job",
-                "python-worker",
-                "react"
-              ],
-              "description": "Scaffold used by `cdk add` (informational)"
+        "additionalProperties": false,
+        "properties": {
+          "apps": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
             },
-            "env": {
-              "type": "object",
-              "additionalProperties": {
-                "type": [
-                  "string",
-                  "number",
-                  "boolean"
-                ]
-              },
-              "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
-            },
-            "secret_env": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              },
-              "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
-            },
-            "cpu": {
+            "additionalProperties": {
               "type": [
-                "string",
-                "number"
+                "object",
+                "null"
               ],
-              "description": "vCPUs, e.g. \"1\", \"2\""
-            },
-            "memory": {
-              "type": "string",
-              "pattern": "^[0-9]+(Mi|Gi)$",
-              "description": "e.g. 512Mi, 1Gi"
-            },
-            "use_vpc": {
-              "type": "boolean",
-              "description": "Attach the env's VPC egress (default true)"
-            },
-            "calls": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
-            },
-            "access": {
-              "type": "object",
+              "description": "app",
               "additionalProperties": false,
-              "description": "Resource-level IAM for this component's service account",
               "properties": {
-                "secrets": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "secretAccessor on each secret"
-                },
-                "buckets": {
+                "env": {
                   "type": "object",
                   "additionalProperties": {
-                    "enum": [
-                      "read",
-                      "write",
-                      "admin"
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
                     ]
                   },
-                  "description": "bucket: read | write | admin"
+                  "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
                 },
-                "publish": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "pubsub.publisher on each topic"
-                },
-                "subscribe": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "pubsub.subscriber on each subscription"
-                },
-                "bigquery_datasets": {
+                "secret_env": {
                   "type": "object",
                   "additionalProperties": {
-                    "enum": [
-                      "read",
-                      "write"
-                    ]
+                    "type": "string"
                   },
-                  "description": "\"dataset\" or \"project:dataset\": read | write"
+                  "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
                 },
-                "project_roles": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "vCPUs, e.g. \"1\", \"2\""
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(Mi|Gi)$",
+                  "description": "e.g. 512Mi, 1Gi"
+                },
+                "use_vpc": {
+                  "type": "boolean",
+                  "description": "Attach the env's VPC egress (default true)"
+                },
+                "access": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Resource-level IAM for this component's service account",
+                  "properties": {
+                    "secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "secretAccessor on each secret"
+                    },
+                    "buckets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write",
+                          "admin"
+                        ]
+                      },
+                      "description": "bucket: read | write | admin"
+                    },
+                    "publish": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.publisher on each topic"
+                    },
+                    "subscribe": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.subscriber on each subscription"
+                    },
+                    "bigquery_datasets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write"
+                        ]
+                      },
+                      "description": "\"dataset\" or \"project:dataset\": read | write"
+                    },
+                    "project_roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Escape hatch: project-wide roles (reviewed)"
+                    }
+                  }
+                },
+                "calls": {
                   "type": "array",
                   "items": {
                     "type": "string"
                   },
-                  "description": "Escape hatch: project-wide roles (reviewed)"
+                  "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Initial image only; releases set the image afterwards"
+                },
+                "command": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "public": {
+                  "type": "boolean",
+                  "description": "Internet-facing: ingress ALL + allUsers invoker"
+                },
+                "ingress": {
+                  "enum": [
+                    "INGRESS_TRAFFIC_ALL",
+                    "INGRESS_TRAFFIC_INTERNAL_ONLY",
+                    "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+                  ]
+                },
+                "min_instances": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "max_instances": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "concurrency": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "timeout": {
+                  "type": "string",
+                  "pattern": "^[0-9]+s$",
+                  "description": "Seconds, e.g. 300s"
+                },
+                "invokers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Who may call this: component names or IAM members"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "cpu_idle": {
+                  "type": "boolean",
+                  "description": "CPU only during requests (default true)"
                 }
               }
+            }
+          },
+          "apis": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
             },
-            "image": {
-              "type": "string",
-              "description": "Initial image only; releases set the image afterwards"
-            },
-            "command": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "public": {
-              "type": "boolean",
-              "description": "Internet-facing: ingress ALL + allUsers invoker"
-            },
-            "port": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 65535
-            },
-            "ingress": {
-              "enum": [
-                "INGRESS_TRAFFIC_ALL",
-                "INGRESS_TRAFFIC_INTERNAL_ONLY",
-                "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
-              ]
-            },
-            "min_instances": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "max_instances": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "concurrency": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "timeout": {
-              "type": "string",
-              "pattern": "^[0-9]+s$",
-              "description": "Seconds, e.g. 300s"
-            },
-            "cpu_idle": {
-              "type": "boolean",
-              "description": "CPU only during requests (default true)"
-            },
-            "invokers": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Who may call this: component names or IAM members"
-            },
-            "task_count": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "parallelism": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "max_retries": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "schedules": {
-              "type": "object",
-              "description": "Cloud Scheduler triggers for this job",
-              "additionalProperties": {
-                "type": "object",
-                "required": [
-                  "cron"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "cron": {
-                    "type": "string",
-                    "description": "e.g. \"0 2 * * *\""
+            "additionalProperties": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "api",
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
                   },
-                  "time_zone": {
-                    "type": "string",
-                    "description": "IANA name, default Etc/UTC"
+                  "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+                },
+                "secret_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
                   },
-                  "args": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
+                  "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+                },
+                "cpu": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "vCPUs, e.g. \"1\", \"2\""
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(Mi|Gi)$",
+                  "description": "e.g. 512Mi, 1Gi"
+                },
+                "use_vpc": {
+                  "type": "boolean",
+                  "description": "Attach the env's VPC egress (default true)"
+                },
+                "access": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Resource-level IAM for this component's service account",
+                  "properties": {
+                    "secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "secretAccessor on each secret"
                     },
-                    "description": "Override container args for this schedule"
+                    "buckets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write",
+                          "admin"
+                        ]
+                      },
+                      "description": "bucket: read | write | admin"
+                    },
+                    "publish": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.publisher on each topic"
+                    },
+                    "subscribe": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.subscriber on each subscription"
+                    },
+                    "bigquery_datasets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write"
+                        ]
+                      },
+                      "description": "\"dataset\" or \"project:dataset\": read | write"
+                    },
+                    "project_roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Escape hatch: project-wide roles (reviewed)"
+                    }
+                  }
+                },
+                "calls": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
                   },
-                  "paused": {
-                    "type": "boolean"
+                  "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Initial image only; releases set the image afterwards"
+                },
+                "command": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "public": {
+                  "type": "boolean",
+                  "description": "Internet-facing: ingress ALL + allUsers invoker"
+                },
+                "ingress": {
+                  "enum": [
+                    "INGRESS_TRAFFIC_ALL",
+                    "INGRESS_TRAFFIC_INTERNAL_ONLY",
+                    "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+                  ]
+                },
+                "min_instances": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "max_instances": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "concurrency": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "timeout": {
+                  "type": "string",
+                  "pattern": "^[0-9]+s$",
+                  "description": "Seconds, e.g. 300s"
+                },
+                "invokers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Who may call this: component names or IAM members"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "cpu_idle": {
+                  "type": "boolean",
+                  "description": "CPU only during requests (default true)"
+                }
+              }
+            }
+          },
+          "jobs": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
+            },
+            "additionalProperties": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "job",
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  },
+                  "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+                },
+                "secret_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+                },
+                "cpu": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "vCPUs, e.g. \"1\", \"2\""
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(Mi|Gi)$",
+                  "description": "e.g. 512Mi, 1Gi"
+                },
+                "use_vpc": {
+                  "type": "boolean",
+                  "description": "Attach the env's VPC egress (default true)"
+                },
+                "access": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Resource-level IAM for this component's service account",
+                  "properties": {
+                    "secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "secretAccessor on each secret"
+                    },
+                    "buckets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write",
+                          "admin"
+                        ]
+                      },
+                      "description": "bucket: read | write | admin"
+                    },
+                    "publish": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.publisher on each topic"
+                    },
+                    "subscribe": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.subscriber on each subscription"
+                    },
+                    "bigquery_datasets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write"
+                        ]
+                      },
+                      "description": "\"dataset\" or \"project:dataset\": read | write"
+                    },
+                    "project_roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Escape hatch: project-wide roles (reviewed)"
+                    }
+                  }
+                },
+                "calls": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Initial image only; releases set the image afterwards"
+                },
+                "command": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "task_count": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "parallelism": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "max_retries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "timeout": {
+                  "type": "string",
+                  "pattern": "^[0-9]+s$",
+                  "description": "Seconds, e.g. 300s"
+                },
+                "schedules": {
+                  "type": "object",
+                  "description": "Cloud Scheduler triggers for this job",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "cron"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string",
+                        "description": "e.g. \"0 2 * * *\""
+                      },
+                      "time_zone": {
+                        "type": "string",
+                        "description": "IANA name, default Etc/UTC"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Override container args for this schedule"
+                      },
+                      "paused": {
+                        "type": "boolean"
+                      }
+                    }
                   }
                 }
               }
+            }
+          },
+          "workers": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
             },
-            "instances": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Worker pool instance count"
-            },
-            "triggers": {
-              "type": "object",
-              "description": "Eventarc triggers delivering events to this function",
-              "additionalProperties": {
-                "type": "object",
-                "required": [
-                  "event_type"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "event_type": {
-                    "type": "string",
-                    "description": "e.g. google.cloud.storage.object.v1.finalized"
+            "additionalProperties": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "worker",
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
                   },
-                  "filters": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "string"
+                  "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+                },
+                "secret_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+                },
+                "cpu": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "vCPUs, e.g. \"1\", \"2\""
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(Mi|Gi)$",
+                  "description": "e.g. 512Mi, 1Gi"
+                },
+                "use_vpc": {
+                  "type": "boolean",
+                  "description": "Attach the env's VPC egress (default true)"
+                },
+                "access": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Resource-level IAM for this component's service account",
+                  "properties": {
+                    "secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "secretAccessor on each secret"
+                    },
+                    "buckets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write",
+                          "admin"
+                        ]
+                      },
+                      "description": "bucket: read | write | admin"
+                    },
+                    "publish": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.publisher on each topic"
+                    },
+                    "subscribe": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.subscriber on each subscription"
+                    },
+                    "bigquery_datasets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write"
+                        ]
+                      },
+                      "description": "\"dataset\" or \"project:dataset\": read | write"
+                    },
+                    "project_roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Escape hatch: project-wide roles (reviewed)"
                     }
-                  },
-                  "pubsub_topic": {
+                  }
+                },
+                "calls": {
+                  "type": "array",
+                  "items": {
                     "type": "string"
                   },
-                  "path": {
+                  "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Initial image only; releases set the image afterwards"
+                },
+                "command": {
+                  "type": "array",
+                  "items": {
                     "type": "string"
+                  }
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "instances": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Worker pool instance count"
+                }
+              }
+            }
+          },
+          "functions": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$"
+            },
+            "additionalProperties": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "function",
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  },
+                  "description": "Plain env vars. ENV, PRODUCT, COMPONENT are always set."
+                },
+                "secret_env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "ENV_VAR: \"secret-id\" or \"secret-id:version\". Accessor is granted automatically."
+                },
+                "cpu": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "vCPUs, e.g. \"1\", \"2\""
+                },
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(Mi|Gi)$",
+                  "description": "e.g. 512Mi, 1Gi"
+                },
+                "use_vpc": {
+                  "type": "boolean",
+                  "description": "Attach the env's VPC egress (default true)"
+                },
+                "access": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Resource-level IAM for this component's service account",
+                  "properties": {
+                    "secrets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "secretAccessor on each secret"
+                    },
+                    "buckets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write",
+                          "admin"
+                        ]
+                      },
+                      "description": "bucket: read | write | admin"
+                    },
+                    "publish": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.publisher on each topic"
+                    },
+                    "subscribe": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "pubsub.subscriber on each subscription"
+                    },
+                    "bigquery_datasets": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "enum": [
+                          "read",
+                          "write"
+                        ]
+                      },
+                      "description": "\"dataset\" or \"project:dataset\": read | write"
+                    },
+                    "project_roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Escape hatch: project-wide roles (reviewed)"
+                    }
+                  }
+                },
+                "calls": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Components this one calls: grants run.invoker and injects <NAME>_URL"
+                },
+                "public": {
+                  "type": "boolean",
+                  "description": "Internet-facing: ingress ALL + allUsers invoker"
+                },
+                "ingress": {
+                  "enum": [
+                    "INGRESS_TRAFFIC_ALL",
+                    "INGRESS_TRAFFIC_INTERNAL_ONLY",
+                    "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+                  ]
+                },
+                "min_instances": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "max_instances": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "concurrency": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "timeout": {
+                  "type": "string",
+                  "pattern": "^[0-9]+s$",
+                  "description": "Seconds, e.g. 300s"
+                },
+                "invokers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Who may call this: component names or IAM members"
+                },
+                "triggers": {
+                  "type": "object",
+                  "description": "Eventarc triggers delivering events to this function",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "event_type"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "event_type": {
+                        "type": "string",
+                        "description": "e.g. google.cloud.storage.object.v1.finalized"
+                      },
+                      "filters": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "pubsub_topic": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      }
+                    }
                   }
                 }
               }
             }
           }
         }
-      },
-      "description": "Per-env, per-component settings, shallow-merged"
+      }
     }
   }
 }

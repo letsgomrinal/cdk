@@ -15,50 +15,54 @@ Log = Callable[[str], None]
 PRODUCT_HEADER = """\
 # yaml-language-server: $schema=../../platform/schema/product.schema.json
 #
-# Infra for product "{product}". This file is the whole definition:
-# add/remove components here (or with `cdk add|remove`), then run `cdk sync`.
-# Reference: docs/PRODUCT_YAML.md
+# Infra for product "{product}". Each section below is a deployment type; each entry
+# in it is a component whose code lives in products/{product}/<section>/<name>/.
+# Add/remove with `cdk add|remove` (or by hand, then `cdk sync`). Reference: docs/PRODUCT_YAML.md
 product: {product}
 team: {team}
 envs: [{envs}]
 
-components: {{}}
+apps: {{}}       # frontends: Next.js, React (Cloud Run service)
+
+apis: {{}}       # HTTP backends: FastAPI (Cloud Run service)
+
+jobs: {{}}       # run to completion, optionally on a schedule (Cloud Run job)
+
+workers: {{}}    # always-on queue/stream consumers (Cloud Run worker pool)
+
+functions: {{}}  # react to events: GCS, Pub/Sub, ... (Cloud Run function + Eventarc)
 
 # Per-env tweaks, shallow-merged into a component's settings:
 # overrides:
 #   prod:
-#     backend: {{ min_instances: 2, memory: 1Gi }}
+#     apis:
+#       backend: {{ min_instances: 2, memory: 1Gi }}
 """
 
 SNIPPETS = {
-    "web": """\
-kind: web
+    "app": """\
 template: {template}
 public: true          # internet-facing; delete this line to keep it internal
 # calls: [backend]    # may invoke `backend`; its URL is injected as BACKEND_URL
 """,
     "api": """\
-kind: api
 template: {template}
 # secret_env: {{ DB_URL: {product}-db-url }}    # access to the secret is granted automatically
 # access: {{ publish: [{product}-events] }}
 """,
     "job": """\
-kind: job
 template: {template}
 # schedules:
 #   daily: {{ cron: "0 2 * * *", time_zone: Etc/UTC }}
 # access: {{ buckets: {{ "{org}-{product}-exports-{{env}}": write }} }}
 """,
     "worker": """\
-kind: worker
 template: {template}
 instances: 1
 # env: {{ SUBSCRIPTION: "projects/{{project}}/subscriptions/{product}-{name}" }}
 # access: {{ subscribe: [{product}-{name}] }}
 """,
     "function": """\
-kind: function
 template: {template}
 # triggers:
 #   upload:
@@ -86,9 +90,11 @@ def lock(path: Path, language: str, repo: Repo, log: Log) -> None:
         log(f"  lock   {repo.rel(path)}/")
 
 
-def copy_template(repo: Repo, product: str, name: str, template: str, log: Log, run_lock: bool = True) -> None:
+def copy_template(
+    repo: Repo, product: str, section: str, name: str, template: str, log: Log, run_lock: bool = True
+) -> None:
     src = repo.templates_dir / template
-    dst = repo.products_dir / product / name
+    dst = repo.products_dir / product / section / name
     if dst.exists():
         log(f"  keep   {repo.rel(dst)}/ (already exists)")
         return
@@ -123,16 +129,18 @@ def add_component(
     if not path.exists():
         raise CdkError(f"no product '{product}'; create it with `cdk new {product}`")
     spec = load_yaml(path) or {}
-    if name in (spec.get("components") or {}):
-        raise CdkError(f"{product} already has a component named '{name}'")
+    section = KINDS[kind].section
+    for k in KINDS.values():
+        if name in (spec.get(k.section) or {}):
+            raise CdkError(f"{product} already has a component named '{name}' (in {k.section})")
 
     snippet = SNIPPETS[kind].format(template=template, product=product, name=name, org=repo.platform["org"])
-    text = insert_component(path.read_text(), name, snippet)
+    text = insert_component(path.read_text(), section, name, snippet)
     path.write_text(text)
-    if name not in (load_yaml(path).get("components") or {}):
-        raise CdkError(f"couldn't place '{name}' in {repo.rel(path)}; add it under components: by hand")
-    log(f"  update {repo.rel(path)}  (+ {name}: {kind})")
-    copy_template(repo, product, name, template, log, run_lock)
+    if name not in (load_yaml(path).get(section) or {}):
+        raise CdkError(f"couldn't place '{name}' in {repo.rel(path)}; add it under {section}: by hand")
+    log(f"  update {repo.rel(path)}  (+ {section}.{name})")
+    copy_template(repo, product, section, name, template, log, run_lock)
 
 
 def new_product(
@@ -167,20 +175,23 @@ def remove_component(repo: Repo, product: str, name: str, keep_code: bool, log: 
     path = prod.path / "product.yaml"
     if name not in prod.components:
         raise CdkError(f"{product} has no component '{name}' (have: {', '.join(prod.components) or 'none'})")
-    text = delete_component(path.read_text(), name)
+    comp = prod.components[name]
+    section = comp.kind.section
+    text = delete_component(path.read_text(), section, name)
     if text is None:
-        raise CdkError(f"couldn't find '  {name}:' under components: in {repo.rel(path)}; remove it by hand")
+        raise CdkError(f"couldn't find '  {name}:' under {section}: in {repo.rel(path)}; remove it by hand")
     path.write_text(text)
-    log(f"  update {repo.rel(path)}  (- {name})")
-    code = prod.path / name
+    log(f"  update {repo.rel(path)}  (- {section}.{name})")
+    code = comp.path
     if code.exists() and not keep_code:
         shutil.rmtree(code)
         log(f"  delete {repo.rel(code)}/")
 
     notes = []
-    leftover = [e for e, o in (prod.spec.get("overrides") or {}).items() if o and name in o]
+    leftover = [e for e, o in (prod.spec.get("overrides") or {}).items() if name in ((o or {}).get(section) or {})]
     if leftover:
-        notes.append(f"Also remove overrides for '{name}' under: {', '.join('overrides.' + e for e in leftover)}")
+        where = ", ".join(f"overrides.{e}.{section}.{name}" for e in leftover)
+        notes.append(f"Also remove {where} from product.yaml")
     protected = [e for e in prod.envs if repo.platform["envs"][e].get("deletion_protection", True)]
     if protected:
         notes.append(
