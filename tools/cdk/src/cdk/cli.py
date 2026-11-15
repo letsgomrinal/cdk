@@ -50,13 +50,8 @@ def cmd_new(a: argparse.Namespace) -> None:
         if len(parts) not in (2, 3):
             raise CdkError(f"--add expects kind:name[:template], got {spec}")
         adds.append((parts[0], parts[1], parts[2] if len(parts) == 3 else None))
-    team = a.team or ""
-    envs = a.envs.split(",") if a.envs else list(repo.platform["envs"])
-
-    if not a.team and not adds and sys.stdin.isatty():
+    if not adds and sys.stdin.isatty():
         log(f"New product '{a.product}'. Press enter to skip a question.\n")
-        team = ask("Owning team (GitHub team slug)")
-        envs = [e.strip() for e in ask("Environments", ",".join(envs)).split(",") if e.strip()]
         app = ask("Frontend app? (nextjs / react / no)", "no")
         if app != "no":
             adds.append(("app", ask("  name", "web"), app))
@@ -68,9 +63,9 @@ def cmd_new(a: argparse.Namespace) -> None:
             if names != "none":
                 adds += [(kind, n.strip(), None) for n in names.split(",") if n.strip()]
 
-    scaffold.new_product(repo, a.product, team, envs, adds, log, run_lock=not a.no_lock)
+    scaffold.new_product(repo, a.product, adds, log, run_lock=not a.no_lock)
     _sync(repo)
-    log(f"\nNext: review products/{a.product}/product.yaml, commit, and open a PR (Atlantis plans it).")
+    log(f"\nNext: review the deployment.yml files in products/{a.product}/, commit, and open a PR (Atlantis plans it).")
 
 
 def cmd_add(a: argparse.Namespace) -> None:
@@ -82,11 +77,9 @@ def cmd_add(a: argparse.Namespace) -> None:
 def cmd_remove(a: argparse.Namespace) -> None:
     repo = Repo.load()
     prod = repo.product(a.product)
-    if not a.yes:
-        code = prod.path / a.name
-        what = f"'{a.name}' from product.yaml"
-        if code.exists() and not a.keep_code:
-            what += f" and delete {repo.rel(code)}/"
+    comp = prod.components.get(a.name)
+    if comp and not a.yes:
+        what = f"{comp.key}" + (" (keeps the code)" if a.keep_code else f" (deletes {repo.rel(comp.path)}/)")
         if ask(f"Remove {what}? (y/N)", "n").lower() != "y":
             raise CdkError("aborted")
     notes = scaffold.remove_component(repo, a.product, a.name, a.keep_code, log)
@@ -98,7 +91,7 @@ def cmd_remove(a: argparse.Namespace) -> None:
 def cmd_list(_: argparse.Namespace) -> None:
     repo = Repo.load()
     for p in repo.products.values():
-        log(f"{p.name}  (team {p.team}; envs {', '.join(p.envs)})  {repo.rel(p.path)}")
+        log(f"{p.name}  {repo.rel(p.path)}  ({len(p.components)} components)")
         for c in p.components.values():
             log(f"  {c.kind.section + '/' + c.name:26} {c.kind.type:12} {c.workload}")
 
@@ -188,8 +181,6 @@ def parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("new", help="create a product (interactive without flags)")
     p.add_argument("product")
-    p.add_argument("--team")
-    p.add_argument("--envs", help="comma-separated (default: all envs in platform.yaml)")
     p.add_argument("--add", action="append", metavar="KIND:NAME[:TEMPLATE]", help=f"kinds: {', '.join(KINDS)}")
     p.add_argument("--no-lock", action="store_true", help="don't run uv lock / pnpm install")
     p.set_defaults(fn=cmd_new)

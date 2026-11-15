@@ -25,6 +25,9 @@ execution:
 # network:
 #   egress: private-ranges    # private-ranges | all-traffic | none (no VPC)
 
+# labels:                    # GCP labels for cost reports; platform.yaml labels are added too
+#   tier: critical
+
 env:
   LOG_LEVEL: info
   # DB_URL: { secret: __PRODUCT__-db-url }

@@ -24,6 +24,10 @@ env:
   LOG_LEVEL: info
   DB_URL: { secret: orders-db-url }
 
+labels:
+  tier: critical
+  data-classification: pii
+
 permissions:
   publish: [orders-events]
 

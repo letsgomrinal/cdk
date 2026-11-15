@@ -1,4 +1,4 @@
-"""Compile product.yaml + platform.yaml + every deployment.yml into one Terraform input per env.
+"""Compile platform.yaml + every deployment.yml into one Terraform input per env.
 
     resolve(component, env)  -> the component's effective deployment.yml for that env
                                 (environments.<env> deep-merged, placeholders filled in)
@@ -127,6 +127,7 @@ def compile_component(comp: Component, env: str, errors: list[str]) -> dict[str,
         "egress": EGRESS[network["egress"]] if "egress" in network else None,
         "calls": calls or None,
         "access": _clean(perms) or None,
+        "labels": c.get("labels") or None,
     }
 
     typ = comp.kind.type
@@ -190,7 +191,7 @@ def compile_product(prod: Product, env: str) -> dict[str, Any]:
             "env": env,
             "project_id": prod.project(env),
             "region": prod.region,
-            "labels": prod.spec.get("labels") or {},
+            "labels": dict(platform.get("labels") or {}),
             "vpc": {"network": vpc["network"], "subnetwork": vpc["subnetwork"]} if vpc else None,
             "deployers": list(platform.get("deployers") or []),
             "deletion_protection": env_cfg.get("deletion_protection", True),

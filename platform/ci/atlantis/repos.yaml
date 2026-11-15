@@ -6,7 +6,7 @@
 #   dir       = products/<product>/deploy
 #   workspace = <env>    -> separate lock and planfile per env
 #
-# Inputs: <env>.tfvars.json (generated from product.yaml + every deployment.yml)
+# Inputs: <env>.tfvars.json (generated from platform.yaml + every deployment.yml)
 # State: backend.<env>.hcl (generated) -> the env's bucket, prefix products/<product>,
 # Terraform's default workspace. The Atlantis workspace only names the env.
 

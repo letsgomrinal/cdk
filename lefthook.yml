@@ -16,8 +16,8 @@ pre-commit:
       run: terraform fmt {staged_files}
       stage_fixed: true
     generated-files:
-      # product.yaml / deployment.yml / platform.yaml changed -> regenerate deploy/, atlantis.yaml, ...
-      glob: "{platform.yaml,products/*/product.yaml,products/*/*/*/deployment.yml}"
+      # deployment.yml / platform.yaml changed -> regenerate deploy/, atlantis.yaml, ...
+      glob: "{platform.yaml,products/*/*/*/deployment.yml}"
       run: uv run cdk sync && git add atlantis.yaml CODEOWNERS pyrightconfig.json platform/schema products/*/deploy
     lockfiles:
       glob: "products/*/*/*/{pyproject.toml,package.json}"

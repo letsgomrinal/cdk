@@ -1,4 +1,4 @@
-"""JSON Schemas for product.yaml and each deployment type's deployment.yml.
+"""JSON Schema for each deployment type's deployment.yml.
 
 Each schema drives:
   - editor autocomplete + inline errors (written to platform/schema/ by `cdk sync`)
@@ -14,7 +14,7 @@ from typing import Any
 
 from jsonschema import Draft7Validator
 
-from cdk.model import KINDS, PRODUCT_RE, CdkError, Kind
+from cdk.model import KINDS, LABEL_KEY, LABEL_VALUE, RESERVED_LABELS, CdkError, Kind
 
 SCHEMA_DRAFT = "http://json-schema.org/draft-07/schema#"
 
@@ -91,6 +91,13 @@ EGRESS = {
 }
 CPU = {"type": ["string", "number"], "description": 'vCPUs: "1", "2", "4", "8" (services also "0.5")'}
 MEMORY = {"type": "string", "pattern": r"^[0-9]+(Mi|Gi)$", "description": "e.g. 512Mi, 2Gi"}
+LABELS = {
+    "type": "object",
+    "description": "GCP labels on this component's resources (cost reports, filtering). "
+    "platform.yaml labels and the standard ones are added automatically.",
+    "propertyNames": {"pattern": LABEL_KEY.pattern, "not": {"enum": list(RESERVED_LABELS)}},
+    "additionalProperties": {"type": "string", "pattern": LABEL_VALUE.pattern},
+}
 EXEC_ENV = {"enum": ["gen1", "gen2"], "description": "Cloud Run execution environment (default: Cloud Run decides)"}
 
 
@@ -163,6 +170,7 @@ def _blocks(kind: Kind) -> dict[str, Any]:
     if kind.type in ("service", "worker-pool"):
         blocks["health"] = obj("Health checks", {"startup": PROBE, "liveness": PROBE})
     blocks["env"] = ENV
+    blocks["labels"] = LABELS
     blocks["permissions"] = obj(
         "IAM for this component's service account, granted on each resource",
         {**(HTTP_PERMISSIONS if http else {}), **PERMISSIONS},
@@ -212,42 +220,9 @@ def deployment_schema(kind: Kind, envs: list[str]) -> dict[str, Any]:
     }
 
 
-def product_schema(envs: list[str]) -> dict[str, Any]:
-    env_enum = {"enum": envs} if envs else {"type": "string"}
-    return {
-        "$schema": SCHEMA_DRAFT,
-        "$id": "product.schema.json",
-        "title": "product.yaml",
-        "description": "Product-level settings. Components are the <section>/<name>/deployment.yml folders "
-        "next to this file. Reference: docs/DEPLOYMENT_YML.md",
-        "type": "object",
-        "required": ["product", "team", "envs"],
-        "additionalProperties": False,
-        "properties": {
-            "product": {
-                "type": "string",
-                "pattern": PRODUCT_RE.pattern,
-                "description": "2-10 chars, [a-z][a-z0-9]*. Prefix of every resource and SA name.",
-            },
-            "team": {"type": "string", "description": "Owning team: GitHub team slug (CODEOWNERS) and label"},
-            "envs": {"type": "array", "items": env_enum, "uniqueItems": True, "minItems": 1},
-            "region": {"type": "string", "description": "Default: platform.yaml region"},
-            "projects": {
-                "type": "object",
-                "propertyNames": env_enum,
-                "additionalProperties": {"type": "string"},
-                "description": "Per-env project ID if not {org}-{product}-{env}",
-            },
-            "labels": {"type": "object", "additionalProperties": {"type": "string"}},
-        },
-    }
-
-
 def all_schemas(envs: list[str]) -> dict[str, dict[str, Any]]:
     """file name -> schema, for platform/schema/."""
-    out = {"product.schema.json": product_schema(envs)}
-    out.update({f"{k.name}.schema.json": deployment_schema(k, envs) for k in KINDS.values()})
-    return out
+    return {f"{k.name}.schema.json": deployment_schema(k, envs) for k in KINDS.values()}
 
 
 def validate(doc: Any, schema: dict[str, Any], where: str) -> None:
@@ -261,15 +236,13 @@ def validate(doc: Any, schema: dict[str, Any], where: str) -> None:
             msg = "unknown key" + ("s " if len(unknown) > 1 else " ") + ", ".join(repr(k) for k in unknown)
             if allowed:
                 msg += f" (allowed: {', '.join(sorted(allowed))})"
+        elif e.validator == "not" and "propertyNames" in e.schema_path:
+            msg = f"label {e.instance!r} is reserved (set automatically)"
         elif e.validator == "oneOf" and isinstance(e.instance, dict):
             msg = "expected a value or { secret: <id>, version: <n> }"
         errors.append(f"{path}: {msg}")
     if errors:
         raise CdkError(f"{where}:\n  - " + "\n  - ".join(dict.fromkeys(errors)))
-
-
-def validate_product(spec: Any, platform: dict[str, Any], where: str) -> None:
-    validate(spec, product_schema(list(platform.get("envs") or {})), where)
 
 
 def validate_deployment(doc: Any, kind: Kind, platform: dict[str, Any], where: str) -> None:

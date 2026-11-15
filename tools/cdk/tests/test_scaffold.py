@@ -26,7 +26,6 @@ def test_new_product_scaffolds_every_kind(orders: Repo) -> None:
         "mailer": "workers",
         "ingest": "functions",
     }
-    assert (prod.path / "product.yaml").read_text().startswith("# yaml-language-server: $schema=")
     assert (
         (prod.path / "jobs/nightly/deployment.yml")
         .read_text()
@@ -61,18 +60,29 @@ def test_add_rejects(orders: Repo, args: tuple, error: str) -> None:
         scaffold.add_component(orders, *args, log=quiet, run_lock=False)
 
 
-def test_new_product_rejects_bad_input(root: Path) -> None:
-    repo = Repo.load(root)
+def test_new_product_rejects_bad_input(orders: Repo) -> None:
     with pytest.raises(CdkError, match="2-10 chars"):
-        scaffold.new_product(repo, "orders-api", "t", ["dev"], [], quiet)
-    with pytest.raises(CdkError, match=r"isn't in platform\.yaml"):
-        scaffold.new_product(repo, "orders", "t", ["staging"], [], quiet)
+        scaffold.new_product(orders, "orders-api", [], quiet)
+    with pytest.raises(CdkError, match="already exists"):
+        scaffold.new_product(orders, "orders", [], quiet)
 
 
-def test_folder_must_match_product_name(orders: Repo) -> None:
-    (orders.root / "products/orders").rename(orders.root / "products/shop")
-    with pytest.raises(CdkError, match="must live in products/orders/"):
+def test_new_product_is_just_a_folder(root: Path) -> None:
+    scaffold.new_product(Repo.load(root), "shop", [], quiet)
+    prod = Repo.load(root).product("shop")
+    assert prod.components == {} and prod.envs == ["dev", "prod"] and prod.team == "commerce"
+    assert prod.project("prod") == "acme-shop-prod"
+
+
+def test_invalid_product_folder_name(orders: Repo) -> None:
+    (orders.root / "products/Bad-Name").mkdir()
+    with pytest.raises(CdkError, match="product names are 2-10 chars"):
         Repo.load(orders.root)
+
+
+def test_files_in_products_are_ignored(orders: Repo) -> None:
+    (orders.root / "products/README.md").write_text("products\n")
+    assert list(Repo.load(orders.root).products) == ["orders"]
 
 
 def test_same_name_in_two_sections_is_rejected(orders: Repo) -> None:

@@ -1,4 +1,4 @@
-"""`cdk sync`: every generated file in the repo, rendered from product.yaml + platform.yaml.
+"""`cdk sync`: every generated file in the repo, rendered from platform.yaml + every deployment.yml.
 
 Generated files are committed (so Atlantis, GitHub and editors see them) and
 CI runs `cdk sync --check` so they can't drift.
@@ -37,7 +37,7 @@ def _deploy_files(repo: Repo, prod: Product) -> dict[Path, str]:
     rel_module = os.path.relpath(repo.modules_dir / "product", deploy)
     files = {
         deploy / "main.tf": f"""# {GENERATED}
-# Inputs: <env>.tfvars.json, compiled from {rel_root}/platform.yaml, ../product.yaml and
+# Inputs: <env>.tfvars.json, compiled from {rel_root}/platform.yaml and
 # ../<section>/<name>/deployment.yml. Atlantis runs: plan -var-file=<env>.tfvars.json
 
 terraform {{
@@ -122,18 +122,9 @@ def _atlantis(repo: Repo) -> str:
 
 
 def _codeowners(repo: Repo) -> str:
-    cfg = repo.platform.get("codeowners") or {}
-    org, platform_team = cfg.get("org", repo.platform["org"]), cfg.get("platform_team", "platform")
-    rows = [("*", f"@{org}/{platform_team}")]
-    rows += [(f"/{repo.rel(p.path)}/", f"@{org}/{p.team}") for p in repo.products.values()]
-    width = max(len(r[0]) for r in rows) + 2
-    body = "\n".join(f"{path:<{width}}{owner}" for path, owner in rows)
-    return (
-        f"# {GENERATED}\n"
-        "# Platform owns everything by default; each product folder is owned by its `team`.\n"
-        "# Later lines win.\n\n"
-        f"{body}\n"
-    )
+    p = repo.platform
+    owner = f"@{p['github_org']}/{p['team']}"
+    return f"# {GENERATED}\n# One team owns this repo (platform.yaml: github_org, team).\n\n* {owner}\n"
 
 
 PYTHON = "python3.13"  # matches the templates' base image and requires-python

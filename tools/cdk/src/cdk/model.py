@@ -18,14 +18,14 @@ COMPONENT_RE = re.compile(r"^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$")
 @dataclass(frozen=True)
 class Kind:
     name: str  # singular, used on the CLI: `cdk add orders job nightly`
-    section: str  # product.yaml section and folder: products/<p>/<section>/<name>/
+    section: str  # folder: products/<p>/<section>/<name>/
     type: str  # Cloud Run resource type
     code: str  # suffix in resource / SA names
     templates: tuple[str, ...]  # first is the default
     description: str
 
 
-# Order here is the order of sections in product.yaml and in `cdk list`.
+# Order here is the order of sections in `cdk list` and the docs.
 KINDS: dict[str, Kind] = {
     k.name: k
     for k in [
@@ -41,6 +41,23 @@ SECTIONS: dict[str, Kind] = {k.section: k for k in KINDS.values()}
 
 class CdkError(Exception):
     """A user-facing error: printed without a traceback."""
+
+
+LABEL_KEY = re.compile(r"^[a-z][a-z0-9_-]{0,62}$")
+LABEL_VALUE = re.compile(r"^[a-z0-9_-]{0,63}$")
+RESERVED_LABELS = ("product", "workload", "workload-type", "env", "team", "managed-by")
+
+
+def validate_platform(platform: dict[str, Any]) -> None:
+    errors = [f"missing '{k}'" for k in ("org", "region", "team", "envs", "registry", "build_project")
+              if not platform.get(k)]  # fmt: skip
+    for k, v in (platform.get("labels") or {}).items():
+        if not LABEL_KEY.match(str(k)) or not LABEL_VALUE.match(str(v)):
+            errors.append(f"labels.{k}: GCP labels are lowercase [a-z0-9_-], keys start with a letter, max 63 chars")
+        if k in RESERVED_LABELS:
+            errors.append(f"labels.{k}: reserved, set automatically")
+    if errors:
+        raise CdkError("platform.yaml:\n  - " + "\n  - ".join(errors))
 
 
 def load_yaml(path: Path) -> Any:
@@ -92,29 +109,30 @@ class Component:
 
 @dataclass
 class Product:
+    """A folder under products/. Everything product-level comes from platform.yaml."""
+
     repo: Repo
     path: Path
-    spec: dict[str, Any]
     components: dict[str, Component] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
-        return self.spec["product"]
+        return self.path.name
 
     @property
     def team(self) -> str:
-        return self.spec["team"]
+        return self.repo.platform["team"]
 
     @property
     def envs(self) -> list[str]:
-        return list(self.spec.get("envs") or [])
+        return list(self.repo.platform["envs"])
 
     @property
     def region(self) -> str:
-        return self.spec.get("region") or self.repo.platform["region"]
+        return self.repo.platform["region"]
 
     def project(self, env: str) -> str:
-        return (self.spec.get("projects") or {}).get(env) or f"{self.repo.platform['org']}-{self.name}-{env}"
+        return f"{self.repo.platform['org']}-{self.name}-{env}"
 
 
 @dataclass
@@ -155,33 +173,29 @@ class Repo:
         root = root or find_root()
         platform = load_yaml(root / "platform.yaml")
         repo = cls(root=root, platform=platform, products={})
-        for f in sorted((root / "products").glob("*/product.yaml")):
-            spec = load_yaml(f) or {}
-            if validate:
-                from cdk.schema import validate_product
-
-                validate_product(spec, platform, repo.rel(f))
-            prod = Product(repo=repo, path=f.parent, spec=spec)
-            if prod.name != f.parent.name:
-                raise CdkError(f"{repo.rel(f)}: product '{prod.name}' must live in products/{prod.name}/")
-            if prod.name in repo.products:
-                raise CdkError(f"product '{prod.name}' is defined twice ({repo.rel(f)})")
+        if validate:
+            validate_platform(platform)
+        # Every folder under products/ is a product (files like README.md are ignored).
+        for d in sorted(p for p in (root / "products").glob("[!.]*") if p.is_dir()):
+            if not PRODUCT_RE.match(d.name):
+                raise CdkError(f"products/{d.name}: product names are 2-10 chars, [a-z][a-z0-9]*, no hyphens")
+            prod = Product(repo=repo, path=d)
             # The folders are the registry: <section>/<name>/deployment.yml is a component.
             for kind in KINDS.values():
-                for d in sorted(p for p in (prod.path / kind.section).glob("[!.]*") if p.is_dir()):
-                    where = repo.rel(d / DEPLOYMENT_FILE)
-                    if not (d / DEPLOYMENT_FILE).exists():
-                        raise CdkError(f"{repo.rel(d)}/ has no {DEPLOYMENT_FILE} (create one, or `cdk add`)")
-                    if not COMPONENT_RE.match(d.name):
-                        raise CdkError(f"{repo.rel(d)}: component names are 1-15 chars, [a-z0-9-], start with a letter")
-                    if d.name in prod.components:
-                        other = prod.components[d.name].kind.section
-                        raise CdkError(f"'{d.name}' exists in both {other}/ and {kind.section}/; names must be unique")
-                    doc = load_yaml(d / DEPLOYMENT_FILE)
+                for c in sorted(p for p in (prod.path / kind.section).glob("[!.]*") if p.is_dir()):
+                    where = repo.rel(c / DEPLOYMENT_FILE)
+                    if not (c / DEPLOYMENT_FILE).exists():
+                        raise CdkError(f"{repo.rel(c)}/ has no {DEPLOYMENT_FILE} (create one, or `cdk add`)")
+                    if not COMPONENT_RE.match(c.name):
+                        raise CdkError(f"{repo.rel(c)}: component names are 1-15 chars, [a-z0-9-], start with a letter")
+                    if c.name in prod.components:
+                        other = prod.components[c.name].kind.section
+                        raise CdkError(f"'{c.name}' exists in both {other}/ and {kind.section}/; names must be unique")
+                    doc = load_yaml(c / DEPLOYMENT_FILE)
                     if validate:
                         from cdk.schema import validate_deployment
 
                         validate_deployment(doc, kind, platform, where)
-                    prod.components[d.name] = Component(product=prod, kind=kind, name=d.name, spec=doc or {})
+                    prod.components[c.name] = Component(product=prod, kind=kind, name=c.name, spec=doc or {})
             repo.products[prod.name] = prod
         return repo

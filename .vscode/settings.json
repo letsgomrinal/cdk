@@ -1,6 +1,5 @@
 {
   "yaml.schemas": {
-    "./platform/schema/product.schema.json": "products/*/product.yaml",
     "./platform/schema/app.schema.json": "products/*/apps/*/deployment.yml",
     "./platform/schema/api.schema.json": "products/*/apis/*/deployment.yml",
     "./platform/schema/job.schema.json": "products/*/jobs/*/deployment.yml",

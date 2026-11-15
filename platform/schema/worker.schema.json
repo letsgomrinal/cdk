@@ -216,6 +216,27 @@
         ]
       }
     },
+    "labels": {
+      "type": "object",
+      "description": "GCP labels on this component's resources (cost reports, filtering). platform.yaml labels and the standard ones are added automatically.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+        "not": {
+          "enum": [
+            "product",
+            "workload",
+            "workload-type",
+            "env",
+            "team",
+            "managed-by"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z0-9_-]{0,63}$"
+      }
+    },
     "permissions": {
       "type": "object",
       "description": "IAM for this component's service account, granted on each resource",
@@ -493,6 +514,27 @@
                   ]
                 }
               ]
+            }
+          },
+          "labels": {
+            "type": "object",
+            "description": "GCP labels on this component's resources (cost reports, filtering). platform.yaml labels and the standard ones are added automatically.",
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+              "not": {
+                "enum": [
+                  "product",
+                  "workload",
+                  "workload-type",
+                  "env",
+                  "team",
+                  "managed-by"
+                ]
+              }
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{0,63}$"
             }
           },
           "permissions": {
