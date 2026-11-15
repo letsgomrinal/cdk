@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../../../platform/schema/function.schema.json
+# Runtime config for orders/gcs-ingest. Every option and its default: docs/DEPLOYMENT_YML.md
+template: python-function
+
+resources:
+  cpu: "1"
+  memory: 1Gi
+
+scaling:
+  max_instances: 20
+
+triggers:
+  upload:
+    event_type: google.cloud.storage.object.v1.finalized
+    filters: { bucket: "acme-orders-inbox-{env}" }
+
+permissions:
+  buckets: { "acme-orders-inbox-{env}": read }
+  publish: [orders-events]

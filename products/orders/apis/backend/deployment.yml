@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../../platform/schema/api.schema.json
+# Runtime config for orders/backend. Every option and its default: docs/DEPLOYMENT_YML.md
+template: fastapi
+
+resources:
+  cpu: "1"
+  memory: 1Gi
+
+scaling:
+  max_instances: 10
+  concurrency: 80
+
+timeout: 60s
+
+network:
+  ingress: internal
+  egress: private-ranges      # reaches Cloud SQL / Memorystore on the VPC
+
+health:
+  startup: { http: /healthz, period: 5s, failure_threshold: 10 }
+  liveness: { http: /healthz, period: 30s }
+
+env:
+  LOG_LEVEL: info
+  DB_URL: { secret: orders-db-url }
+
+permissions:
+  publish: [orders-events]
+
+environments:
+  prod:
+    scaling: { min_instances: 2, max_instances: 30 }
+    env: { LOG_LEVEL: warning }

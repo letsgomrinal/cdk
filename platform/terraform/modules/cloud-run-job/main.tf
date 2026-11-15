@@ -71,6 +71,11 @@ variable "timeout" {
   default     = "600s"
 }
 
+variable "execution_environment" {
+  type    = string
+  default = null
+}
+
 variable "vpc" {
   type = object({
     network    = string
@@ -118,9 +123,10 @@ resource "google_cloud_run_v2_job" "this" {
     parallelism = var.parallelism
 
     template {
-      service_account = var.service_account_email
-      max_retries     = var.max_retries
-      timeout         = var.timeout
+      service_account       = var.service_account_email
+      max_retries           = var.max_retries
+      timeout               = var.timeout
+      execution_environment = var.execution_environment
 
       dynamic "vpc_access" {
         for_each = var.vpc == null ? [] : [var.vpc]

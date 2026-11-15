@@ -6,7 +6,12 @@
 #   1. naming      -> {product}-{workload}-{svc|job|wp|fn}
 #   2. identity    -> a dedicated SA with the same ID, plus resource-level grants
 #   3. resource    -> the Cloud Run service / job / worker pool / function
-#   4. access      -> invoker grants between workloads, release grants for deployers
+#   4. access      -> invoker grants between workloads (`invokers`, `calls`), release grants
+#
+# `calls = ["service/backend"]` gives the caller run.invoker on backend and the
+# env var BACKEND_URL. URLs use Cloud Run's deterministic form
+# (https://<name>-<project-number>.<region>.run.app), so two workloads can call
+# each other without a dependency cycle.
 
 terraform {
   required_version = ">= 1.6"
@@ -29,7 +34,40 @@ locals {
   }
 
   vpc_for = {
-    for key, w in local.workloads : key => (w.spec.use_vpc ? var.vpc : null)
+    for key, w in local.workloads : key => (
+      var.vpc == null || w.spec.egress == "NONE" ? null : {
+        network    = try(var.vpc.network, "")
+        subnetwork = try(var.vpc.subnetwork, "")
+        egress     = w.spec.egress
+      }
+    )
+  }
+
+  http_keys      = [for key, w in local.workloads : key if contains(["service", "function"], w.type)]
+  any_calls      = length(flatten([for w in values(local.workloads) : w.spec.calls])) > 0
+  project_number = local.any_calls ? data.google_project.this[0].number : ""
+
+  call_env = {
+    for key, w in local.workloads : key => {
+      for t in w.spec.calls : "${upper(replace(split("/", t)[1], "-", "_"))}_URL" =>
+      "https://${var.product}-${split("/", t)[1]}-${startswith(t, "function/") ? "fn" : "svc"}-${local.project_number}.${var.region}.run.app"
+    }
+  }
+  env_for = { for key, w in local.workloads : key => merge(local.call_env[key], w.spec.env) }
+}
+
+data "google_project" "this" {
+  count      = local.any_calls ? 1 : 0
+  project_id = var.project_id
+}
+
+resource "terraform_data" "calls" {
+  input = keys(local.workloads)
+  lifecycle {
+    precondition {
+      condition     = alltrue(flatten([for w in values(local.workloads) : [for t in w.spec.calls : contains(local.http_keys, t)]]))
+      error_message = "calls must target services or functions of this product (\"service/<name>\" or \"function/<name>\")."
+    }
   }
 }
 
@@ -79,20 +117,25 @@ module "service" {
   vpc                   = local.vpc_for["service/${each.key}"]
   deletion_protection   = var.deletion_protection
 
-  image         = coalesce(each.value.image, "us-docker.pkg.dev/cloudrun/container/hello")
-  command       = each.value.command
-  args          = each.value.args
-  env           = each.value.env
-  secret_env    = each.value.secret_env
-  cpu           = each.value.cpu
-  memory        = each.value.memory
-  port          = each.value.port
-  ingress       = each.value.ingress
-  min_instances = each.value.min_instances
-  max_instances = each.value.max_instances
-  concurrency   = each.value.concurrency
-  timeout       = each.value.timeout
-  cpu_idle      = each.value.cpu_idle
+  image                 = coalesce(each.value.image, "us-docker.pkg.dev/cloudrun/container/hello")
+  command               = each.value.command
+  args                  = each.value.args
+  env                   = local.env_for["service/${each.key}"]
+  secret_env            = each.value.secret_env
+  cpu                   = each.value.cpu
+  memory                = each.value.memory
+  port                  = each.value.port
+  ingress               = each.value.ingress
+  min_instances         = each.value.min_instances
+  max_instances         = each.value.max_instances
+  concurrency           = each.value.concurrency
+  timeout               = each.value.timeout
+  cpu_idle              = each.value.cpu_idle
+  startup_cpu_boost     = each.value.startup_cpu_boost
+  session_affinity      = each.value.session_affinity
+  execution_environment = each.value.execution_environment
+  startup_probe         = each.value.startup_probe
+  liveness_probe        = each.value.liveness_probe
 }
 
 module "job" {
@@ -107,18 +150,19 @@ module "job" {
   vpc                   = local.vpc_for["job/${each.key}"]
   deletion_protection   = var.deletion_protection
 
-  image       = coalesce(each.value.image, "us-docker.pkg.dev/cloudrun/container/job")
-  command     = each.value.command
-  args        = each.value.args
-  env         = each.value.env
-  secret_env  = each.value.secret_env
-  cpu         = each.value.cpu
-  memory      = each.value.memory
-  task_count  = each.value.task_count
-  parallelism = each.value.parallelism
-  max_retries = each.value.max_retries
-  timeout     = each.value.timeout
-  schedules   = each.value.schedules
+  image                 = coalesce(each.value.image, "us-docker.pkg.dev/cloudrun/container/job")
+  command               = each.value.command
+  args                  = each.value.args
+  env                   = local.env_for["job/${each.key}"]
+  secret_env            = each.value.secret_env
+  cpu                   = each.value.cpu
+  memory                = each.value.memory
+  task_count            = each.value.task_count
+  parallelism           = each.value.parallelism
+  max_retries           = each.value.max_retries
+  timeout               = each.value.timeout
+  execution_environment = each.value.execution_environment
+  schedules             = each.value.schedules
 }
 
 module "worker_pool" {
@@ -133,14 +177,16 @@ module "worker_pool" {
   vpc                   = local.vpc_for["worker-pool/${each.key}"]
   deletion_protection   = var.deletion_protection
 
-  image      = coalesce(each.value.image, "us-docker.pkg.dev/cloudrun/container/hello")
-  command    = each.value.command
-  args       = each.value.args
-  env        = each.value.env
-  secret_env = each.value.secret_env
-  cpu        = each.value.cpu
-  memory     = each.value.memory
-  instances  = each.value.instances
+  image          = coalesce(each.value.image, "us-docker.pkg.dev/cloudrun/container/hello")
+  command        = each.value.command
+  args           = each.value.args
+  env            = local.env_for["worker-pool/${each.key}"]
+  secret_env     = each.value.secret_env
+  cpu            = each.value.cpu
+  memory         = each.value.memory
+  instances      = each.value.instances
+  startup_probe  = each.value.startup_probe
+  liveness_probe = each.value.liveness_probe
 }
 
 module "function" {
@@ -155,7 +201,7 @@ module "function" {
   vpc                   = local.vpc_for["function/${each.key}"]
   deletion_protection   = var.deletion_protection
 
-  env           = each.value.env
+  env           = local.env_for["function/${each.key}"]
   secret_env    = each.value.secret_env
   cpu           = each.value.cpu
   memory        = each.value.memory
@@ -177,9 +223,17 @@ locals {
     { for k, v in var.functions : "function/${k}" => { name = module.function[k].name, invokers = v.invokers } },
   )
 
+  # explicit invokers + every workload that `calls` the target
+  invokers_of = {
+    for target, t in local.http_targets : target => distinct(concat(
+      t.invokers,
+      [for key, w in local.workloads : key if contains(w.spec.calls, target)],
+    ))
+  }
+
   invoker_grants = merge([
     for target, t in local.http_targets : {
-      for inv in t.invokers : "${target}|${inv}" => {
+      for inv in local.invokers_of[target] : "${target}|${inv}" => {
         service = t.name
         ref     = inv
         member  = can(regex("^(service|job|worker-pool|function)/", inv)) ? try(module.identity[inv].member, null) : inv

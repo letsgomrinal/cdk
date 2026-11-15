@@ -1,7 +1,8 @@
 """Which components does a change touch?
 
 Two scopes:
-  release  only components whose own folder changed (code to rebuild and deploy)
+  release  only components whose code changed (to rebuild and deploy). A change
+           to deployment.yml alone is infra: Atlantis applies it, no new image.
   check    also every component when shared lint/test config changes, since
            components that passed before may fail now
 """
@@ -66,10 +67,15 @@ def owns(comp: Component, path: str) -> bool:
     return path == prefix or path.startswith(prefix + "/")
 
 
+def is_code(comp: Component, path: str) -> bool:
+    return owns(comp, path) and path != comp.product.repo.rel(comp.config_file)
+
+
 def affected(repo: Repo, files: list[str] | None, scope: Scope) -> list[Component]:
     comps = repo.components()
     if files is None:
         return comps
     if scope == "check" and any(f == s or (s.endswith("/") and f.startswith(s)) for f in files for s in SHARED_CONFIG):
         return comps
-    return [c for c in comps if any(owns(c, f) for f in files)]
+    match = owns if scope == "check" else is_code
+    return [c for c in comps if any(match(c, f) for f in files)]

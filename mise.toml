@@ -51,12 +51,12 @@ description = "cdk unit tests"
 run = "uv run pytest"
 
 [tasks."test:terraform"]
-description = "Terraform module tests (mocked provider, no GCP access)"
-dir = "{{config_root}}/platform/terraform/modules"
+description = "Terraform module tests + mocked plan of every product env (no GCP access)"
+dir = "{{config_root}}"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
-for m in */; do
+for m in platform/terraform/modules/*/ products/*/deploy/; do
   [ -d "$m/tests" ] || continue
   echo "== $m"
   (cd "$m" && terraform init -input=false -backend=false >/dev/null && terraform test)

@@ -21,8 +21,10 @@ steps:
     commands:
       - terraform fmt -recursive -check -diff
       - |
-        for m in platform/terraform/modules/*/; do
+        # module tests + a mocked plan of every product env (generated deploy/tests/plan.tftest.hcl)
+        for m in platform/terraform/modules/*/ products/*/deploy/; do
           [ -d "$m/tests" ] || continue
+          echo "== $m"
           (cd "$m" && terraform init -input=false -backend=false >/dev/null && terraform test) || exit 1
         done
 

@@ -10,11 +10,11 @@ projects:
     workflow: cdk
     autoplan:
       enabled: true
-      when_modified: ["*.tf", "backend.dev.hcl", "../product.yaml", "../../../platform.yaml", "../../../platform/terraform/modules/**/*.tf"]
+      when_modified: ["*.tf", "backend.dev.hcl", "dev.tfvars.json", "../../../platform/terraform/modules/**/*.tf"]
   - name: orders-prod
     dir: products/orders/deploy
     workspace: prod
     workflow: cdk
     autoplan:
       enabled: true
-      when_modified: ["*.tf", "backend.prod.hcl", "../product.yaml", "../../../platform.yaml", "../../../platform/terraform/modules/**/*.tf"]
+      when_modified: ["*.tf", "backend.prod.hcl", "prod.tfvars.json", "../../../platform/terraform/modules/**/*.tf"]

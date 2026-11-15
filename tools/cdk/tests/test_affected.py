@@ -26,6 +26,12 @@ def test_component_change(orders: Repo) -> None:
     assert keys(orders, files, "check") == ["orders/backend"]
 
 
+def test_deployment_yml_alone_is_not_a_release(orders: Repo) -> None:
+    files = ["products/orders/apis/backend/deployment.yml"]
+    assert keys(orders, files, "release") == []
+    assert keys(orders, files, "check") == ["orders/backend"]
+
+
 def test_shared_config_affects_all_checks_but_no_release(orders: Repo) -> None:
     files = ["pyproject.toml", "README.md"]
     assert len(keys(orders, files, "check")) == 5

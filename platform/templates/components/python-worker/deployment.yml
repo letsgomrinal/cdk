@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../../../platform/schema/worker.schema.json
+#
+# Runtime config for __PRODUCT__/__NAME__ (worker -> Cloud Run worker pool).
+# Every option and its default: docs/DEPLOYMENT_YML.md
+template: python-worker
+
+resources:
+  cpu: "1"
+  memory: 512Mi
+
+scaling:
+  instances: 1                # always-on instances
+
+# health:
+#   liveness: { http: /healthz, port: 8080, period: 30s }
+
+# network:
+#   egress: private-ranges    # private-ranges | all-traffic | none (no VPC)
+
+env:
+  LOG_LEVEL: info
+  SUBSCRIPTION: "projects/{project}/subscriptions/__PRODUCT__-__NAME__"
+
+permissions:
+  subscribe: [__PRODUCT__-__NAME__]
+
+environments:
+  prod:
+    scaling: { instances: 2 }

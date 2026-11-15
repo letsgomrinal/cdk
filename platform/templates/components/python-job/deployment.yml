@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../platform/schema/job.schema.json
+#
+# Runtime config for __PRODUCT__/__NAME__ (job -> Cloud Run job).
+# Every option and its default: docs/DEPLOYMENT_YML.md
+template: python-job
+
+# container:
+#   args: [--full]
+
+resources:
+  cpu: "1"
+  memory: 512Mi
+
+execution:
+  tasks: 1                    # tasks per execution (each gets CLOUD_RUN_TASK_INDEX)
+  # parallelism: 0            # tasks at once; 0 = all
+  max_retries: 3              # per failed task
+  task_timeout: 600s
+
+# schedules:
+#   nightly: { cron: "0 2 * * *", time_zone: Etc/UTC }
+#   weekly:  { cron: "0 4 * * 0", args: [--full] }
+
+# execution_environment: gen2
+# network:
+#   egress: private-ranges    # private-ranges | all-traffic | none (no VPC)
+
+env:
+  LOG_LEVEL: info
+  # DB_URL: { secret: __PRODUCT__-db-url }
+
+# permissions:
+#   buckets: { "__PRODUCT__-exports-{env}": write }
+#   bigquery_datasets: { __PRODUCT___analytics: write }
+
+# calls: [backend]
+
+# environments:
+#   prod:
+#     resources: { memory: 2Gi }

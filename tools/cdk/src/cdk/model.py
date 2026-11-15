@@ -10,6 +10,7 @@ from typing import Any
 
 from ruamel.yaml import YAML
 
+DEPLOYMENT_FILE = "deployment.yml"
 PRODUCT_RE = re.compile(r"^[a-z][a-z0-9]{1,9}$")
 COMPONENT_RE = re.compile(r"^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$")
 
@@ -73,6 +74,10 @@ class Component:
         return self.product.path / self.kind.section / self.name
 
     @property
+    def config_file(self) -> Path:
+        return self.path / DEPLOYMENT_FILE
+
+    @property
     def language(self) -> str | None:
         if (self.path / "pyproject.toml").exists():
             return "python"
@@ -131,8 +136,8 @@ class Repo:
         return self.root / "platform" / "terraform" / "modules"
 
     @property
-    def schema_path(self) -> Path:
-        return self.root / "platform" / "schema" / "product.schema.json"
+    def schema_dir(self) -> Path:
+        return self.root / "platform" / "schema"
 
     def rel(self, p: Path) -> str:
         return str(p.relative_to(self.root))
@@ -161,13 +166,22 @@ class Repo:
                 raise CdkError(f"{repo.rel(f)}: product '{prod.name}' must live in products/{prod.name}/")
             if prod.name in repo.products:
                 raise CdkError(f"product '{prod.name}' is defined twice ({repo.rel(f)})")
+            # The folders are the registry: <section>/<name>/deployment.yml is a component.
             for kind in KINDS.values():
-                for n, c in (spec.get(kind.section) or {}).items():
-                    if n in prod.components:
-                        other = prod.components[n].kind.section
-                        raise CdkError(
-                            f"{repo.rel(f)}: '{n}' is in both {other} and {kind.section}; names must be unique"
-                        )
-                    prod.components[n] = Component(product=prod, kind=kind, name=n, spec=c or {})
+                for d in sorted(p for p in (prod.path / kind.section).glob("[!.]*") if p.is_dir()):
+                    where = repo.rel(d / DEPLOYMENT_FILE)
+                    if not (d / DEPLOYMENT_FILE).exists():
+                        raise CdkError(f"{repo.rel(d)}/ has no {DEPLOYMENT_FILE} (create one, or `cdk add`)")
+                    if not COMPONENT_RE.match(d.name):
+                        raise CdkError(f"{repo.rel(d)}: component names are 1-15 chars, [a-z0-9-], start with a letter")
+                    if d.name in prod.components:
+                        other = prod.components[d.name].kind.section
+                        raise CdkError(f"'{d.name}' exists in both {other}/ and {kind.section}/; names must be unique")
+                    doc = load_yaml(d / DEPLOYMENT_FILE)
+                    if validate:
+                        from cdk.schema import validate_deployment
+
+                        validate_deployment(doc, kind, platform, where)
+                    prod.components[d.name] = Component(product=prod, kind=kind, name=d.name, spec=doc or {})
             repo.products[prod.name] = prod
         return repo

@@ -103,6 +103,34 @@ def cmd_list(_: argparse.Namespace) -> None:
             log(f"  {c.kind.section + '/' + c.name:26} {c.kind.type:12} {c.workload}")
 
 
+def cmd_config(a: argparse.Namespace) -> None:
+    from io import StringIO
+
+    from ruamel.yaml import YAML
+
+    from cdk.compile import compile_component, resolve
+
+    repo = Repo.load()
+    product, _, name = a.component.partition("/")
+    prod = repo.product(product)
+    if name not in prod.components:
+        raise CdkError(f"{product} has no component '{name}' (have: {', '.join(prod.components) or 'none'})")
+    comp = prod.components[name]
+    env = a.env or prod.envs[0]
+    if env not in prod.envs:
+        raise CdkError(f"{product} has no env '{env}' (have: {', '.join(prod.envs)})")
+    errors: list[str] = []
+    doc = compile_component(comp, env, errors) if a.compiled else resolve(comp, env)
+    if errors:
+        raise CdkError("\n".join(errors))
+    y = YAML()
+    y.default_flow_style = False
+    buf = StringIO()
+    y.dump(doc, buf)
+    what = "Terraform input" if a.compiled else "effective deployment.yml"
+    log(f"# {comp.key} ({comp.kind.name} -> Cloud Run {comp.kind.type}), {what} for {env}\n{buf.getvalue()}")
+
+
 def cmd_sync(a: argparse.Namespace) -> None:
     repo = Repo.load()
     changed = generate.sync(repo, check=a.check)
@@ -182,6 +210,12 @@ def parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_remove)
 
     sub.add_parser("list", help="list products and components").set_defaults(fn=cmd_list)
+
+    p = sub.add_parser("config", help="show a component's effective config for an env")
+    p.add_argument("component", metavar="PRODUCT/COMPONENT")
+    p.add_argument("--env", help="default: the product's first env")
+    p.add_argument("--compiled", action="store_true", help="show what Terraform receives instead")
+    p.set_defaults(fn=cmd_config)
 
     p = sub.add_parser("sync", help="regenerate generated files")
     p.add_argument("--check", action="store_true", help="fail if anything is out of date (CI, git hook)")

@@ -98,6 +98,48 @@ variable "cpu_idle" {
   default     = true
 }
 
+variable "startup_cpu_boost" {
+  type    = bool
+  default = false
+}
+
+variable "session_affinity" {
+  type    = bool
+  default = false
+}
+
+variable "execution_environment" {
+  description = "EXECUTION_ENVIRONMENT_GEN1 | EXECUTION_ENVIRONMENT_GEN2 | null (Cloud Run default)"
+  type        = string
+  default     = null
+}
+
+variable "startup_probe" {
+  description = "null = no probe. http_path null = TCP check on the container port."
+  type = object({
+    http_path             = optional(string)
+    port                  = optional(number)
+    initial_delay_seconds = optional(number, 0)
+    period_seconds        = optional(number, 10)
+    timeout_seconds       = optional(number, 1)
+    failure_threshold     = optional(number, 3)
+  })
+  default = null
+}
+
+variable "liveness_probe" {
+  description = "null = no probe. http_path null = TCP check on the container port."
+  type = object({
+    http_path             = optional(string)
+    port                  = optional(number)
+    initial_delay_seconds = optional(number, 0)
+    period_seconds        = optional(number, 10)
+    timeout_seconds       = optional(number, 1)
+    failure_threshold     = optional(number, 3)
+  })
+  default = null
+}
+
 variable "vpc" {
   description = "Direct VPC egress. null = no VPC."
   type = object({
@@ -135,6 +177,8 @@ resource "google_cloud_run_v2_service" "this" {
     labels                           = var.labels
     timeout                          = var.timeout
     max_instance_request_concurrency = var.concurrency
+    session_affinity                 = var.session_affinity
+    execution_environment            = var.execution_environment
 
     scaling {
       min_instance_count = var.min_instances
@@ -162,8 +206,51 @@ resource "google_cloud_run_v2_service" "this" {
       }
 
       resources {
-        limits   = { cpu = var.cpu, memory = var.memory }
-        cpu_idle = var.cpu_idle
+        limits            = { cpu = var.cpu, memory = var.memory }
+        cpu_idle          = var.cpu_idle
+        startup_cpu_boost = var.startup_cpu_boost
+      }
+
+      dynamic "startup_probe" {
+        for_each = var.startup_probe == null ? [] : [var.startup_probe]
+        content {
+          initial_delay_seconds = startup_probe.value.initial_delay_seconds
+          period_seconds        = startup_probe.value.period_seconds
+          timeout_seconds       = startup_probe.value.timeout_seconds
+          failure_threshold     = startup_probe.value.failure_threshold
+          dynamic "http_get" {
+            for_each = startup_probe.value.http_path == null ? [] : [startup_probe.value.http_path]
+            content {
+              path = http_get.value
+              port = coalesce(startup_probe.value.port, var.port)
+            }
+          }
+          dynamic "tcp_socket" {
+            for_each = startup_probe.value.http_path == null ? [1] : []
+            content { port = coalesce(startup_probe.value.port, var.port) }
+          }
+        }
+      }
+
+      dynamic "liveness_probe" {
+        for_each = var.liveness_probe == null ? [] : [var.liveness_probe]
+        content {
+          initial_delay_seconds = liveness_probe.value.initial_delay_seconds
+          period_seconds        = liveness_probe.value.period_seconds
+          timeout_seconds       = liveness_probe.value.timeout_seconds
+          failure_threshold     = liveness_probe.value.failure_threshold
+          dynamic "http_get" {
+            for_each = liveness_probe.value.http_path == null ? [] : [liveness_probe.value.http_path]
+            content {
+              path = http_get.value
+              port = coalesce(liveness_probe.value.port, var.port)
+            }
+          }
+          dynamic "tcp_socket" {
+            for_each = liveness_probe.value.http_path == null ? [1] : []
+            content { port = coalesce(liveness_probe.value.port, var.port) }
+          }
+        }
       }
 
       dynamic "env" {

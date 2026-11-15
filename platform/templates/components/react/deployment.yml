@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../../platform/schema/app.schema.json
+#
+# Runtime config for __PRODUCT__/__NAME__ (app -> Cloud Run service).
+# Every option and its default: docs/DEPLOYMENT_YML.md
+template: react
+
+container:
+  port: 8080
+
+resources:
+  cpu: "1"
+  memory: 512Mi
+  # cpu_idle: true            # CPU only while handling requests; false = always allocated
+  # startup_cpu_boost: false  # extra CPU while starting
+
+scaling:
+  min_instances: 0            # 0 = scale to zero
+  max_instances: 10
+  # concurrency: 80           # requests per instance
+
+# timeout: 300s               # request timeout
+# session_affinity: false
+# execution_environment: gen2 # gen1 | gen2
+
+network:
+  ingress: all                # internal | load-balancer | all
+  # egress: private-ranges    # private-ranges | all-traffic | none (no VPC)
+
+# health:
+#   startup: { http: /healthz, period: 5s, failure_threshold: 10 }
+#   liveness: { http: /healthz, period: 30s }
+
+env:
+  LOG_LEVEL: info
+  # DB_URL: { secret: __PRODUCT__-db-url }   # Secret Manager; access granted automatically
+
+permissions:
+  public: true                # internet-facing (allUsers may invoke)
+  # buckets: { "__PRODUCT__-uploads-{env}": write }   # read | write | admin
+  # publish: [__PRODUCT__-events]
+  # invokers: [some-job]       # other components (or IAM members) allowed to call this
+
+# calls: [backend]            # call another app/api/function: grants invoke + injects BACKEND_URL
+
+# Per-env differences, deep-merged over everything above:
+environments:
+  prod:
+    scaling: { min_instances: 1 }

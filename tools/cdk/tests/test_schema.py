@@ -2,74 +2,65 @@ import re
 
 import pytest
 from cdk.model import KINDS, CdkError
-from cdk.schema import TYPE_KEYS, validate_product
-from conftest import REAL_ROOT
+from cdk.schema import all_schemas, validate_deployment, validate_product
 
 PLATFORM = {"envs": {"dev": {}, "prod": {}}}
 
 
-def spec(**sections: dict | None) -> dict:
-    return {"product": "orders", "team": "t", "envs": ["dev"], **sections}
+def check(kind: str, doc: dict | None) -> None:
+    validate_deployment(doc, KINDS[kind], PLATFORM, "x")
 
 
-def test_valid_spec_passes() -> None:
-    validate_product(
-        spec(
-            apps={"web": {"public": True, "calls": ["api"]}},
-            apis={"api": {"memory": "1Gi", "access": {"buckets": {"b": "write"}}}},
-            jobs={"job": {"schedules": {"d": {"cron": "0 2 * * *", "args": ["x"]}}}, "bare": None},
-            workers=None,
-            overrides={"prod": {"apis": {"api": {"min_instances": 2}}}},
-        ),
-        PLATFORM,
-        "x",
-    )
+def test_valid_documents_pass() -> None:
+    check("api", {
+        "container": {"port": 8000},
+        "resources": {"cpu": 2, "memory": "1Gi", "startup_cpu_boost": True},
+        "scaling": {"min_instances": 1, "max_instances": 5, "concurrency": 40},
+        "timeout": "60s",
+        "network": {"ingress": "internal", "egress": "all-traffic"},
+        "health": {"startup": {"http": "/healthz", "period": "5s"}, "liveness": {"port": 8000}},
+        "env": {"A": "x", "B": 3, "C": True, "D": {"secret": "s", "version": 2}},
+        "permissions": {"public": False, "invokers": ["job1"], "buckets": {"b": "write"}},
+        "calls": ["other"],
+        "environments": {"prod": {"scaling": {"min_instances": 3}}},
+    })  # fmt: skip
+    check("job", {"execution": {"tasks": 4, "task_timeout": 900}, "schedules": {"d": {"cron": "0 2 * * *"}}})
+    check("worker", {"scaling": {"instances": 2}, "health": {"liveness": {"http": "/h", "port": 9000}}})
+    check("function", {"triggers": {"t": {"event_type": "x"}}, "permissions": {"public": True}})
+    check("job", None)  # an empty deployment.yml is fine
 
 
 @pytest.mark.parametrize(
-    ("sections", "expected"),
+    ("kind", "doc", "expected"),
     [
-        ({"apis": {"c": {"memroy": "1Gi"}}}, "apis.c: unknown key 'memroy' for apis"),
-        ({"jobs": {"c": {"public": True}}}, "jobs.c: unknown key 'public' for jobs"),
-        ({"apis": {"c": {"kind": "api"}}}, "unknown key 'kind'"),
-        ({"lambdas": {"c": {}}}, "(top level): unknown key 'lambdas'"),
-        ({"apis": {"c": {"memory": "1GB"}}}, "does not match"),
-        ({"jobs": {"c": {"access": {"buckets": {"b": "owner"}}}}}, "'owner' is not one of"),
-        ({"overrides": {"prod": {"jobs": {"c": {"template": "x"}}}}}, "unknown key 'template'"),
+        ("job", {"scaling": {"min_instances": 1}}, "unknown key 'scaling'"),
+        ("api", {"schedules": {}}, "unknown key 'schedules'"),
+        ("worker", {"network": {"ingress": "all"}}, "network: unknown key 'ingress'"),
+        ("job", {"permissions": {"public": True}}, "permissions: unknown key 'public'"),
+        ("function", {"container": {"args": ["x"]}}, "unknown key 'container'"),
+        ("api", {"resources": {"memroy": "1Gi"}}, "resources: unknown key 'memroy' (allowed: cpu, cpu_idle"),
+        ("api", {"resources": {"memory": "1GB"}}, "does not match"),
+        ("api", {"network": {"egress": "private"}}, "'private' is not one of"),
+        ("api", {"env": {"X": {"secret_id": "s"}}}, "env.X: expected a value or { secret: <id>, version: <n> }"),
+        ("api", {"environments": {"staging": {}}}, "'staging' is not one of"),
+        ("api", {"environments": {"prod": {"template": "x"}}}, "unknown key 'template'"),
+        ("api", {"timeout": "5m"}, "does not match"),
     ],
 )
-def test_errors_name_the_problem(sections: dict, expected: str) -> None:
+def test_errors_name_the_problem(kind: str, doc: dict, expected: str) -> None:
     with pytest.raises(CdkError, match=re.escape(expected)):
-        validate_product(spec(**sections), PLATFORM, "x")
+        check(kind, doc)
 
 
-def test_unknown_env_and_bad_names() -> None:
-    bad = {"product": "Orders-1", "team": "t", "envs": ["stage"], "apis": {"Bad_Name": {}}}
+def test_product_schema() -> None:
+    validate_product({"product": "orders", "team": "t", "envs": ["dev"], "region": "x"}, PLATFORM, "x")
     with pytest.raises(CdkError) as e:
-        validate_product(bad, PLATFORM, "x")
+        validate_product({"product": "Orders-1", "team": "t", "envs": ["stage"], "apis": {}}, PLATFORM, "x")
     msg = str(e.value)
-    assert "product: 'Orders-1' does not match" in msg
+    assert "'Orders-1' does not match" in msg
     assert "'stage' is not one of" in msg
-    assert "'Bad_Name' does not match" in msg
+    assert "unknown key 'apis'" in msg
 
 
-def _hcl_list(text: str, name: str) -> list[str]:
-    m = re.search(rf"{re.escape(name)}\s*=\s*(.+)", text)
-    assert m, name
-    return re.findall(r'"([a-z_]+)"', m.group(1))
-
-
-def test_schema_matches_terraform_module() -> None:
-    """platform/terraform/modules/product-spec must accept exactly what the schema allows."""
-    tf = (REAL_ROOT / "platform/terraform/modules/product-spec/main.tf").read_text()
-    common = _hcl_list(tf, "common_keys")
-    block = re.search(r"allowed_keys = \{(.*?)\n  \}", tf, re.S)
-    assert block
-    for typ, keys in TYPE_KEYS.items():
-        line = next(ln for ln in block.group(1).splitlines() if ln.strip().startswith((f"{typ} ", f'"{typ}"')))
-        tf_keys = set(common) | set(_hcl_list(line, line.split("=")[0].strip()))
-        assert tf_keys == set(keys), f"{typ}: terraform={sorted(tf_keys)} schema={sorted(keys)}"
-    sections = re.search(r"sections = \{(.*?)\}", tf, re.S)
-    assert sections
-    tf_sections = dict(re.findall(r'(\w+)\s*=\s*"([\w-]+)"', sections.group(1)))
-    assert tf_sections == {k.section: k.type for k in KINDS.values()}
+def test_one_schema_file_per_kind() -> None:
+    assert set(all_schemas(["dev"])) == {"product.schema.json"} | {f"{k}.schema.json" for k in KINDS}

@@ -1,0 +1,565 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "worker.schema.json",
+  "title": "deployment.yml (worker)",
+  "description": "A worker: always-on queue/stream consumer. Runs as a Cloud Run worker-pool. Reference: docs/DEPLOYMENT_YML.md",
+  "type": [
+    "object",
+    "null"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "template": {
+      "type": "string",
+      "description": "Scaffold this was created from (informational)"
+    },
+    "container": {
+      "type": "object",
+      "description": "How the container runs",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "description": "CPU and memory per instance",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "vCPUs: \"1\", \"2\", \"4\", \"8\" (services also \"0.5\")"
+        },
+        "memory": {
+          "type": "string",
+          "pattern": "^[0-9]+(Mi|Gi)$",
+          "description": "e.g. 512Mi, 2Gi"
+        }
+      }
+    },
+    "scaling": {
+      "type": "object",
+      "description": "Instances",
+      "additionalProperties": false,
+      "properties": {
+        "instances": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Always-on instances"
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "description": "Networking",
+      "additionalProperties": false,
+      "properties": {
+        "egress": {
+          "enum": [
+            "private-ranges",
+            "all-traffic",
+            "none"
+          ],
+          "description": "Outbound via the env's VPC: private IPs only (default), all traffic, or no VPC"
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "description": "Health checks",
+      "additionalProperties": false,
+      "properties": {
+        "startup": {
+          "type": "object",
+          "description": "Health check. With `http` it's an HTTP GET, otherwise a TCP check on the port.",
+          "additionalProperties": false,
+          "properties": {
+            "http": {
+              "type": "string",
+              "pattern": "^/",
+              "description": "HTTP path, e.g. /healthz"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Default: the container port"
+            },
+            "initial_delay": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "pattern": "^[0-9]+s$",
+              "description": "Seconds: \"300s\" or 300"
+            },
+            "period": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "pattern": "^[0-9]+s$",
+              "description": "Seconds: \"300s\" or 300"
+            },
+            "timeout": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "pattern": "^[0-9]+s$",
+              "description": "Seconds: \"300s\" or 300"
+            },
+            "failure_threshold": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "liveness": {
+          "type": "object",
+          "description": "Health check. With `http` it's an HTTP GET, otherwise a TCP check on the port.",
+          "additionalProperties": false,
+          "properties": {
+            "http": {
+              "type": "string",
+              "pattern": "^/",
+              "description": "HTTP path, e.g. /healthz"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Default: the container port"
+            },
+            "initial_delay": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "pattern": "^[0-9]+s$",
+              "description": "Seconds: \"300s\" or 300"
+            },
+            "period": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "pattern": "^[0-9]+s$",
+              "description": "Seconds: \"300s\" or 300"
+            },
+            "timeout": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "pattern": "^[0-9]+s$",
+              "description": "Seconds: \"300s\" or 300"
+            },
+            "failure_threshold": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "description": "Env vars: a value, or a Secret Manager secret. ENV, PRODUCT, COMPONENT are always set.",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "Secret reference. Access to the secret is granted automatically.",
+            "additionalProperties": false,
+            "properties": {
+              "secret": {
+                "type": "string",
+                "description": "Secret ID, or \"projects/p/secrets/x\""
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "description": "Default: latest"
+              }
+            },
+            "required": [
+              "secret"
+            ]
+          }
+        ]
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "description": "IAM for this component's service account, granted on each resource",
+      "additionalProperties": false,
+      "properties": {
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "secretAccessor on each secret (env secrets are granted already)"
+        },
+        "buckets": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "read",
+              "write",
+              "admin"
+            ]
+          },
+          "description": "bucket: read | write | admin"
+        },
+        "publish": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "pubsub.publisher on each topic"
+        },
+        "subscribe": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "pubsub.subscriber on each subscription"
+        },
+        "bigquery_datasets": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "read",
+              "write"
+            ]
+          },
+          "description": "\"dataset\" or \"project:dataset\": read | write"
+        },
+        "project_roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Escape hatch: project-wide roles (reviewed)"
+        }
+      }
+    },
+    "calls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Apps/apis/functions this calls: grants run.invoker and injects <NAME>_URL"
+    },
+    "environments": {
+      "type": "object",
+      "description": "Per-env settings, deep-merged over the above (lists are replaced)",
+      "propertyNames": {
+        "enum": [
+          "dev",
+          "prod"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "container": {
+            "type": "object",
+            "description": "How the container runs",
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "resources": {
+            "type": "object",
+            "description": "CPU and memory per instance",
+            "additionalProperties": false,
+            "properties": {
+              "cpu": {
+                "type": [
+                  "string",
+                  "number"
+                ],
+                "description": "vCPUs: \"1\", \"2\", \"4\", \"8\" (services also \"0.5\")"
+              },
+              "memory": {
+                "type": "string",
+                "pattern": "^[0-9]+(Mi|Gi)$",
+                "description": "e.g. 512Mi, 2Gi"
+              }
+            }
+          },
+          "scaling": {
+            "type": "object",
+            "description": "Instances",
+            "additionalProperties": false,
+            "properties": {
+              "instances": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Always-on instances"
+              }
+            }
+          },
+          "network": {
+            "type": "object",
+            "description": "Networking",
+            "additionalProperties": false,
+            "properties": {
+              "egress": {
+                "enum": [
+                  "private-ranges",
+                  "all-traffic",
+                  "none"
+                ],
+                "description": "Outbound via the env's VPC: private IPs only (default), all traffic, or no VPC"
+              }
+            }
+          },
+          "health": {
+            "type": "object",
+            "description": "Health checks",
+            "additionalProperties": false,
+            "properties": {
+              "startup": {
+                "type": "object",
+                "description": "Health check. With `http` it's an HTTP GET, otherwise a TCP check on the port.",
+                "additionalProperties": false,
+                "properties": {
+                  "http": {
+                    "type": "string",
+                    "pattern": "^/",
+                    "description": "HTTP path, e.g. /healthz"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "Default: the container port"
+                  },
+                  "initial_delay": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "pattern": "^[0-9]+s$",
+                    "description": "Seconds: \"300s\" or 300"
+                  },
+                  "period": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "pattern": "^[0-9]+s$",
+                    "description": "Seconds: \"300s\" or 300"
+                  },
+                  "timeout": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "pattern": "^[0-9]+s$",
+                    "description": "Seconds: \"300s\" or 300"
+                  },
+                  "failure_threshold": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "liveness": {
+                "type": "object",
+                "description": "Health check. With `http` it's an HTTP GET, otherwise a TCP check on the port.",
+                "additionalProperties": false,
+                "properties": {
+                  "http": {
+                    "type": "string",
+                    "pattern": "^/",
+                    "description": "HTTP path, e.g. /healthz"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "Default: the container port"
+                  },
+                  "initial_delay": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "pattern": "^[0-9]+s$",
+                    "description": "Seconds: \"300s\" or 300"
+                  },
+                  "period": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "pattern": "^[0-9]+s$",
+                    "description": "Seconds: \"300s\" or 300"
+                  },
+                  "timeout": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "pattern": "^[0-9]+s$",
+                    "description": "Seconds: \"300s\" or 300"
+                  },
+                  "failure_threshold": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          "env": {
+            "type": "object",
+            "description": "Env vars: a value, or a Secret Manager secret. ENV, PRODUCT, COMPONENT are always set.",
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "description": "Secret reference. Access to the secret is granted automatically.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "secret": {
+                      "type": "string",
+                      "description": "Secret ID, or \"projects/p/secrets/x\""
+                    },
+                    "version": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Default: latest"
+                    }
+                  },
+                  "required": [
+                    "secret"
+                  ]
+                }
+              ]
+            }
+          },
+          "permissions": {
+            "type": "object",
+            "description": "IAM for this component's service account, granted on each resource",
+            "additionalProperties": false,
+            "properties": {
+              "secrets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "secretAccessor on each secret (env secrets are granted already)"
+              },
+              "buckets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "admin"
+                  ]
+                },
+                "description": "bucket: read | write | admin"
+              },
+              "publish": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.publisher on each topic"
+              },
+              "subscribe": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "pubsub.subscriber on each subscription"
+              },
+              "bigquery_datasets": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                },
+                "description": "\"dataset\" or \"project:dataset\": read | write"
+              },
+              "project_roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Escape hatch: project-wide roles (reviewed)"
+              }
+            }
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Apps/apis/functions this calls: grants run.invoker and injects <NAME>_URL"
+          }
+        }
+      }
+    }
+  }
+}

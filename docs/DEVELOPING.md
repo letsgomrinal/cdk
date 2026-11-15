@@ -30,7 +30,7 @@ In VS Code, accept the recommended extensions. Formatting on save, the
 | JS deps | pnpm workspace, one lockfile per component | `pnpm-workspace.yaml` |
 | JS lint/format | biome | `biome.json` |
 | Terraform | `terraform fmt`, `terraform test` (mocked provider), tflint | `.tflint.hcl` |
-| product.yaml | JSON Schema | `platform/schema/product.schema.json` (generated) |
+| product.yaml, deployment.yml | JSON Schema per file type | `platform/schema/*.schema.json` (generated) |
 | Git hooks | lefthook | `lefthook.yml` |
 | Dependency updates | Renovate | `renovate.json` |
 | Ownership | CODEOWNERS | generated from each product's `team` |
@@ -46,7 +46,7 @@ basedpyright) lives once at the root, and the pnpm store and uv cache are shared
 
 | Hook | Does |
 |---|---|
-| pre-commit | ruff fix + format, biome fix + format, `terraform fmt` on staged files (fixes are re-staged); `cdk sync` when `product.yaml`/`platform.yaml` change; lockfile + checks for components whose dependencies changed |
+| pre-commit | ruff fix + format, biome fix + format, `terraform fmt` on staged files (fixes are re-staged); `cdk sync` when `product.yaml`/`deployment.yml`/`platform.yaml` change; lockfile + checks for components whose dependencies changed |
 | pre-push | `cdk check --affected` against `origin/main`; `pytest` if `tools/cdk` changed |
 
 Skip once with `LEFTHOOK=0 git commit …`. CI runs the same checks either way.
@@ -55,7 +55,7 @@ Skip once with `LEFTHOOK=0 git commit …`. CI runs the same checks either way.
 
 | Step | Image | Runs |
 |---|---|---|
-| terraform | `hashicorp/terraform` | fmt check, module tests |
+| terraform | `hashicorp/terraform` | fmt check, module tests, mocked plan of every product env |
 | tflint | `tflint` | lint modules (Google ruleset) |
 | python | `uv` | ruff, basedpyright, pytest for `cdk`, `cdk sync --check` |
 | python-components | `uv` | `cdk check --affected --lang python` |
@@ -76,12 +76,17 @@ uv run pytest
 uv run basedpyright && uv run ruff check .
 ```
 
-Modules: `tools/cdk/src/cdk/`. `model` is the repo model, `schema` the
-product.yaml schema, `yamledit` handles comment-safe edits, `scaffold` is
-new/add/remove, `generate` is sync, `affected` and `check` are CI, and
-`release` is release/promote. Tests build a throwaway repo per test
-(`tests/conftest.py`).
+Modules: `tools/cdk/src/cdk/`. `model` is the repo model (discovers components
+by folder), `schema` holds the product.yaml and per-type deployment.yml schemas,
+`compile` turns them into `<env>.tfvars.json`, `scaffold` is new/add/remove,
+`generate` is sync, `affected` and `check` are CI, and `release` is
+release/promote. Tests build a throwaway repo per test (`tests/conftest.py`).
 
-When you add a `product.yaml` key, add it to `TYPE_KEYS` in `schema.py` **and**
-`allowed_keys` in `platform/terraform/modules/product-spec/main.tf`.
-`test_schema_matches_terraform_allowed_keys` fails until both agree.
+To add a `deployment.yml` setting:
+
+1. Add it to the type's block in `schema.py` (`_blocks`).
+2. Map it in `compile.py`.
+3. Add the variable in `platform/terraform/modules/product` (and the per-type module).
+
+The generated mocked plan (`products/*/deploy/tests/plan.tftest.hcl`) fails in CI if the compiler
+and the module disagree.
