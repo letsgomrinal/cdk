@@ -120,8 +120,30 @@ calls: [nightly, ghost]
     assert "public needs network.ingress 'all' or 'load-balancer'" in msg
 
 
+def test_labels(orders: Repo) -> None:
+    repo = write(
+        orders,
+        "jobs/nightly/deployment.yml",
+        "labels: { tier: batch }\nenvironments: { prod: { labels: { tier: critical } } }\n",
+    )
+    nightly = repo.product("orders").components["nightly"]
+    assert compile_component(nightly, "dev", [])["labels"] == {"tier": "batch"}
+    assert compile_component(nightly, "prod", [])["labels"] == {"tier": "critical"}
+    assert compile_product(repo.product("orders"), "dev")["config"]["labels"] == {"cost-center": "cc-123"}
+
+
+def test_platform_labels_are_validated(orders: Repo) -> None:
+    platform = orders.root / "platform.yaml"
+    platform.write_text(platform.read_text().replace("cost-center: cc-123", "env: x\n  Cost: Y"))
+    with pytest.raises(CdkError) as e:
+        Repo.load(orders.root)
+    assert "labels.env: reserved" in str(e.value)
+    assert "labels.Cost: GCP labels are lowercase" in str(e.value)
+
+
 def test_product_config(orders: Repo) -> None:
     cfg = compile_product(orders.product("orders"), "prod")["config"]
+    assert cfg["team"] == "commerce"
     assert cfg["project_id"] == "acme-orders-prod"
     assert cfg["deletion_protection"] is True
     assert set(cfg["services"]) == {"storefront", "backend"}
@@ -139,7 +161,7 @@ def test_templates_are_valid_for_their_kind(root: Path) -> None:
     pairs = [("app", "nextjs"), ("app", "react"), ("api", "fastapi"), ("job", "python-job"),
              ("worker", "python-worker"), ("function", "python-function")]  # fmt: skip
     adds: list[tuple[str, str, str | None]] = [(k, f"c{i}", t) for i, (k, t) in enumerate(pairs)]
-    scaffold.new_product(repo, "shop", "t", ["dev", "prod"], adds, quiet, run_lock=False)
+    scaffold.new_product(repo, "shop", adds, quiet, run_lock=False)
     repo = Repo.load(root)
     for env in ("dev", "prod"):
         compile_product(repo.product("shop"), env)

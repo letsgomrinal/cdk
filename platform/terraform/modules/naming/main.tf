@@ -94,7 +94,7 @@ output "service_account_display_name" {
 }
 
 output "labels" {
-  description = "Standard labels applied to every resource the kit creates."
+  description = "Labels on every resource the kit creates. The standard ones always win."
   value = merge(var.extra_labels, {
     product       = var.product
     workload      = var.workload

@@ -11,18 +11,6 @@ from cdk.model import COMPONENT_RE, KINDS, PRODUCT_RE, CdkError, Repo
 
 Log = Callable[[str], None]
 
-PRODUCT_HEADER = """\
-# yaml-language-server: $schema=../../platform/schema/product.schema.json
-#
-# Product "{product}". Components are folders next to this file, one per deployment type:
-#   apps/<name>/  apis/<name>/  jobs/<name>/  workers/<name>/  functions/<name>/
-# each with its code and a deployment.yml (memory, scaling, networking, ...).
-# Add/remove with `cdk add|remove`. Reference: docs/DEPLOYMENT_YML.md
-product: {product}
-team: {team}
-envs: [{envs}]
-"""
-
 LOCKERS: dict[str, list[str]] = {
     "python": ["uv", "lock", "--quiet"],
     "node": ["pnpm", "install", "--lockfile-only", "--silent"],
@@ -78,7 +66,7 @@ def add_component(
         raise CdkError(f"component name '{name}' must be 1-15 chars, [a-z0-9-], starting with a letter")
 
     prod_dir = repo.products_dir / product
-    if not (prod_dir / "product.yaml").exists():
+    if not prod_dir.is_dir():
         raise CdkError(f"no product '{product}'; create it with `cdk new {product}`")
     for k in KINDS.values():
         if (prod_dir / k.section / name).exists():
@@ -87,27 +75,16 @@ def add_component(
 
 
 def new_product(
-    repo: Repo,
-    product: str,
-    team: str,
-    envs: list[str],
-    adds: list[tuple[str, str, str | None]],
-    log: Log,
-    run_lock: bool = True,
+    repo: Repo, product: str, adds: list[tuple[str, str, str | None]], log: Log, run_lock: bool = True
 ) -> None:
+    """A product is just a folder; it gets its deploy/ files from `cdk sync`."""
     if not PRODUCT_RE.match(product):
         raise CdkError("product must be 2-10 chars, [a-z][a-z0-9]*, no hyphens (it prefixes every SA name)")
     if product in repo.products or (repo.products_dir / product).exists():
         raise CdkError(f"product '{product}' already exists")
-    if not team:
-        raise CdkError("a team is required")
-    for e in envs:
-        if e not in repo.platform["envs"]:
-            raise CdkError(f"env '{e}' isn't in platform.yaml (have: {', '.join(repo.platform['envs'])})")
     d = repo.products_dir / product
     d.mkdir(parents=True)
-    (d / "product.yaml").write_text(PRODUCT_HEADER.format(product=product, team=team, envs=", ".join(envs)))
-    log(f"  create {repo.rel(d / 'product.yaml')}")
+    log(f"  create {repo.rel(d)}/")
     for kind, name, template in adds:
         add_component(repo, product, kind, name, template, log, run_lock)
 

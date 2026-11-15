@@ -1,17 +1,20 @@
-# Repo-wide settings shared by every product. Owned by the platform team.
-# Products inherit these; product.yaml can override `region` and `projects`.
-org: acme                      # project IDs default to {org}-{product}-{env}
+# Repo-wide settings shared by every product. A product is a folder under
+# products/; its components are <section>/<name>/deployment.yml inside it.
+org: acme                      # project IDs are {org}-{product}-{env}
 region: europe-west1
+
+# The team that owns this repo: CODEOWNERS (@{github_org}/{team}) and a `team` label.
+github_org: acme
+team: commerce
+
+# Labels on every resource in the repo. Components add their own in deployment.yml.
+# Reserved (set automatically): product, workload, workload-type, env, team, managed-by.
+labels:
+  cost-center: cc-123
 
 # Where `cdk release` builds images (Cloud Build) and pushes them.
 build_project: acme-cicd
 registry: europe-west1-docker.pkg.dev/acme-artifacts/products   # image = {registry}/{product}/{component}:{sha}
-
-# GitHub teams for the generated CODEOWNERS: products are owned by @{org}/{team},
-# everything else by the platform team.
-codeowners:
-  org: acme
-  platform_team: platform
 
 # Principals that roll out releases. They get run.developer on each workload and
 # serviceAccountUser on each runtime SA.

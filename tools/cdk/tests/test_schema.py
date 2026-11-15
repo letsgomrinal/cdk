@@ -2,7 +2,7 @@ import re
 
 import pytest
 from cdk.model import KINDS, CdkError
-from cdk.schema import all_schemas, validate_deployment, validate_product
+from cdk.schema import all_schemas, validate_deployment
 
 PLATFORM = {"envs": {"dev": {}, "prod": {}}}
 
@@ -22,6 +22,7 @@ def test_valid_documents_pass() -> None:
         "env": {"A": "x", "B": 3, "C": True, "D": {"secret": "s", "version": 2}},
         "permissions": {"public": False, "invokers": ["job1"], "buckets": {"b": "write"}},
         "calls": ["other"],
+        "labels": {"tier": "critical", "data-classification": "pii"},
         "environments": {"prod": {"scaling": {"min_instances": 3}}},
     })  # fmt: skip
     check("job", {"execution": {"tasks": 4, "task_timeout": 900}, "schedules": {"d": {"cron": "0 2 * * *"}}})
@@ -45,6 +46,9 @@ def test_valid_documents_pass() -> None:
         ("api", {"environments": {"staging": {}}}, "'staging' is not one of"),
         ("api", {"environments": {"prod": {"template": "x"}}}, "unknown key 'template'"),
         ("api", {"timeout": "5m"}, "does not match"),
+        ("job", {"labels": {"Tier": "x"}}, "'Tier' does not match"),
+        ("job", {"labels": {"tier": "Critical"}}, "'Critical' does not match"),
+        ("worker", {"labels": {"env": "x"}}, "label 'env' is reserved"),
     ],
 )
 def test_errors_name_the_problem(kind: str, doc: dict, expected: str) -> None:
@@ -52,15 +56,5 @@ def test_errors_name_the_problem(kind: str, doc: dict, expected: str) -> None:
         check(kind, doc)
 
 
-def test_product_schema() -> None:
-    validate_product({"product": "orders", "team": "t", "envs": ["dev"], "region": "x"}, PLATFORM, "x")
-    with pytest.raises(CdkError) as e:
-        validate_product({"product": "Orders-1", "team": "t", "envs": ["stage"], "apis": {}}, PLATFORM, "x")
-    msg = str(e.value)
-    assert "'Orders-1' does not match" in msg
-    assert "'stage' is not one of" in msg
-    assert "unknown key 'apis'" in msg
-
-
 def test_one_schema_file_per_kind() -> None:
-    assert set(all_schemas(["dev"])) == {"product.schema.json"} | {f"{k}.schema.json" for k in KINDS}
+    assert set(all_schemas(["dev"])) == {f"{k}.schema.json" for k in KINDS}

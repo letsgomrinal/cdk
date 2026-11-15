@@ -68,6 +68,7 @@ variable "services" {
     memory     = optional(string, "512Mi")
     egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
     calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
+    labels     = optional(map(string), {})               # this workload only, on top of var.labels
     access = optional(object({
       secrets           = optional(list(string), [])
       buckets           = optional(map(string), {})
@@ -128,6 +129,7 @@ variable "jobs" {
     memory     = optional(string, "512Mi")
     egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
     calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
+    labels     = optional(map(string), {})               # this workload only, on top of var.labels
     access = optional(object({
       secrets           = optional(list(string), [])
       buckets           = optional(map(string), {})
@@ -172,6 +174,7 @@ variable "worker_pools" {
     memory     = optional(string, "512Mi")
     egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
     calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
+    labels     = optional(map(string), {})               # this workload only, on top of var.labels
     access = optional(object({
       secrets           = optional(list(string), [])
       buckets           = optional(map(string), {})
@@ -222,6 +225,7 @@ variable "functions" {
     memory     = optional(string, "512Mi")
     egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
     calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
+    labels     = optional(map(string), {})               # this workload only, on top of var.labels
     access = optional(object({
       secrets           = optional(list(string), [])
       buckets           = optional(map(string), {})

@@ -16,7 +16,7 @@ on your PATH, so `cdk` works from anywhere in the repo. `mise run setup` runs
 `uv sync`, `pnpm install`, installs tflint plugins and the git hooks.
 
 In VS Code, accept the recommended extensions. Formatting on save, the
-`product.yaml` schema and per-component type checking are already configured.
+`deployment.yml` schemas and per-component type checking are already configured.
 
 ## Tooling
 
@@ -30,10 +30,10 @@ In VS Code, accept the recommended extensions. Formatting on save, the
 | JS deps | pnpm workspace, one lockfile per component | `pnpm-workspace.yaml` |
 | JS lint/format | biome | `biome.json` |
 | Terraform | `terraform fmt`, `terraform test` (mocked provider), tflint | `.tflint.hcl` |
-| product.yaml, deployment.yml | JSON Schema per file type | `platform/schema/*.schema.json` (generated) |
+| deployment.yml | JSON Schema per deployment type | `platform/schema/*.schema.json` (generated) |
 | Git hooks | lefthook | `lefthook.yml` |
 | Dependency updates | Renovate | `renovate.json` |
-| Ownership | CODEOWNERS | generated from each product's `team` |
+| Ownership | CODEOWNERS | generated from `platform.yaml` `team` |
 
 ### Why one lockfile per component?
 
@@ -46,7 +46,7 @@ basedpyright) lives once at the root, and the pnpm store and uv cache are shared
 
 | Hook | Does |
 |---|---|
-| pre-commit | ruff fix + format, biome fix + format, `terraform fmt` on staged files (fixes are re-staged); `cdk sync` when `product.yaml`/`deployment.yml`/`platform.yaml` change; lockfile + checks for components whose dependencies changed |
+| pre-commit | ruff fix + format, biome fix + format, `terraform fmt` on staged files (fixes are re-staged); `cdk sync` when `deployment.yml`/`platform.yaml` change; lockfile + checks for components whose dependencies changed |
 | pre-push | `cdk check --affected` against `origin/main`; `pytest` if `tools/cdk` changed |
 
 Skip once with `LEFTHOOK=0 git commit …`. CI runs the same checks either way.
@@ -77,7 +77,7 @@ uv run basedpyright && uv run ruff check .
 ```
 
 Modules: `tools/cdk/src/cdk/`. `model` is the repo model (discovers components
-by folder), `schema` holds the product.yaml and per-type deployment.yml schemas,
+by folder), `schema` holds the per-type deployment.yml schemas,
 `compile` turns them into `<env>.tfvars.json`, `scaffold` is new/add/remove,
 `generate` is sync, `affected` and `check` are CI, and `release` is
 release/promote. Tests build a throwaway repo per test (`tests/conftest.py`).

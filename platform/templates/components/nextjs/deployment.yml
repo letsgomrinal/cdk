@@ -30,6 +30,9 @@ network:
 #   startup: { http: /healthz, period: 5s, failure_threshold: 10 }
 #   liveness: { http: /healthz, period: 30s }
 
+# labels:                    # GCP labels for cost reports; platform.yaml labels are added too
+#   tier: critical
+
 env:
   LOG_LEVEL: info
   # DB_URL: { secret: __PRODUCT__-db-url }   # Secret Manager; access granted automatically

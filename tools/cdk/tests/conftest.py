@@ -47,7 +47,7 @@ def orders(root: Path) -> Repo:
         ("worker", "mailer", None),
         ("function", "ingest", None),
     ]
-    scaffold.new_product(repo, "orders", "commerce", ["dev", "prod"], adds, quiet, run_lock=False)
+    scaffold.new_product(repo, "orders", adds, quiet, run_lock=False)
     repo = Repo.load(root)
     generate.sync(repo)
     git(root, "add", "-A")

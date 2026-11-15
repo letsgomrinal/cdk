@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=../../platform/schema/product.schema.json
-#
-# Product "orders". Components are folders next to this file, one per deployment type:
-#   apps/<name>/  apis/<name>/  jobs/<name>/  workers/<name>/  functions/<name>/
-# each with its code and a deployment.yml (memory, scaling, networking, ...).
-# Add/remove with `cdk add|remove`. Reference: docs/DEPLOYMENT_YML.md
-product: orders
-team: commerce
-envs: [dev, prod]

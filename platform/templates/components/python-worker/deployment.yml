@@ -17,6 +17,9 @@ scaling:
 # network:
 #   egress: private-ranges    # private-ranges | all-traffic | none (no VPC)
 
+# labels:                    # GCP labels for cost reports; platform.yaml labels are added too
+#   tier: critical
+
 env:
   LOG_LEVEL: info
   SUBSCRIPTION: "projects/{project}/subscriptions/__PRODUCT__-__NAME__"

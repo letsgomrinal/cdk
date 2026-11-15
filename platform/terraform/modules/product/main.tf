@@ -83,7 +83,7 @@ module "naming" {
   env          = var.env
   team         = var.team
   project_id   = var.project_id
-  extra_labels = var.labels
+  extra_labels = merge(var.labels, each.value.spec.labels)
 }
 
 # ---------------------------------------------------------------- identity

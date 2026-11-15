@@ -1,8 +1,8 @@
 # cdk: serverless products on GCP
 
 A monorepo for products made of **apps (frontends), APIs, jobs, workers
-and functions** on Cloud Run. Each product is a `product.yaml` plus one folder
-per component, holding its code and a `deployment.yml` (memory, scaling,
+and functions** on Cloud Run. Each product is a folder
+with one subfolder per component, holding its code and a `deployment.yml` (memory, scaling,
 networking, health checks, permissions). Everything else (Terraform, Atlantis,
 Drone, release, linting, ownership) is shared at the root and run by the `cdk` CLI.
 
@@ -29,7 +29,6 @@ orders  (team commerce; envs dev, prod)  products/orders
 
 ```
 products/<product>/              ← product teams (CODEOWNERS: their team)
-  product.yaml                   team, envs, region
   apps/<name>/  apis/<name>/     one folder per component: code, Dockerfile, lockfile,
   jobs/<name>/  workers/<name>/  and deployment.yml (runtime config, schema per type)
   functions/<name>/
@@ -42,7 +41,7 @@ platform/                        ← platform team
   ci/atlantis/repos.yaml         server-side Atlantis workflow
 
 tools/cdk/                       the CLI (uv package, tested)
-platform.yaml                    org, region, registry, deployers, per-env state bucket + VPC
+platform.yaml                    org, team, labels, region, registry, deployers, per-env state bucket + VPC
 
 mise.toml                        toolchain versions + tasks (setup, fmt, lint, test, check)
 pyproject.toml  uv.lock          uv workspace: cdk + ruff, basedpyright, pytest config
@@ -79,5 +78,5 @@ overwrite each other.
 ## Docs
 
 * [docs/DEVELOPING.md](docs/DEVELOPING.md): setup, tooling, editor, hooks, CI
-* [docs/DEPLOYMENT_YML.md](docs/DEPLOYMENT_YML.md): every `deployment.yml` and `product.yaml` setting
+* [docs/DEPLOYMENT_YML.md](docs/DEPLOYMENT_YML.md): every `deployment.yml` setting, plus labels
 * [docs/CONVENTIONS.md](docs/CONVENTIONS.md): naming, IAM, ownership, what the platform provides

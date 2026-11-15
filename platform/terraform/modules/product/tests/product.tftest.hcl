@@ -74,6 +74,7 @@ run "calls_egress_and_runtime_options" {
     vpc = { network = "net", subnetwork = "sub" }
     services = {
       backend = {
+        labels            = { tier = "critical" }
         egress            = "ALL_TRAFFIC"
         startup_cpu_boost = true
         startup_probe     = { http_path = "/healthz" }
@@ -100,6 +101,10 @@ run "calls_egress_and_runtime_options" {
   assert {
     condition     = local.vpc_for["service/web"] == null && local.vpc_for["service/backend"].egress == "ALL_TRAFFIC"
     error_message = "Egress is per workload; NONE means no VPC."
+  }
+  assert {
+    condition     = module.naming["service/backend"].labels["tier"] == "critical" && !contains(keys(module.naming["service/web"].labels), "tier")
+    error_message = "Workload labels apply to that workload only."
   }
   assert {
     condition     = local.vpc_for["worker-pool/mailer"].egress == "PRIVATE_RANGES_ONLY"
