@@ -8,15 +8,16 @@ code-review rule.
 
 | Term | Meaning | Example |
 |---|---|---|
-| **product** | One folder `products/<product>/` with one `product.yaml`, and one Terraform state per env | `orders` |
+| **product** | One folder `products/<product>/` with a `product.yaml`, and one Terraform state per env | `orders` |
 | **component** | One deployable piece of a product: a code folder + one Cloud Run resource (a.k.a. workload) | `nightly-export` |
-| **section** | The deployment type, as a `product.yaml` section and a folder: `apps`, `apis`, `jobs`, `workers`, `functions` | `jobs` |
+| **section** | The deployment type, as a folder: `apps`, `apis`, `jobs`, `workers`, `functions` | `jobs` |
 | **type** | The Cloud Run resource: `service`, `job`, `worker-pool`, `function` | `job` |
 | **env** | `dev`, `staging`, `prod`. **One GCP project per product per env** | `acme-orders-prod` |
 
 A product can contain any mix of sections, and any number of components in each.
 `apps` and `apis` both become Cloud Run services; they differ in template and defaults.
-A component's path is always `products/<product>/<section>/<name>/`.
+A component's path is always `products/<product>/<section>/<name>/`, and its runtime
+config is the `deployment.yml` in that folder ([reference](DEPLOYMENT_YML.md)).
 
 ## 2. Names
 
@@ -70,21 +71,23 @@ Billing exports can group cost by `product`, `team` and `workload`.
 
 **One service account per workload. Never shared, never the default compute SA.**
 
-Each component declares what it needs in `product.yaml`, and the kit grants it on that single resource:
+Each component declares what it needs under `permissions:` in its `deployment.yml`, and the
+kit grants it on that single resource:
 
 ```yaml
-nightly-export:                                  # under jobs:
-  secret_env: { DB_URL: orders-db-url }          # accessor on this secret is granted automatically
-  access:
-    secrets: [orders-api-key]                    # roles/secretmanager.secretAccessor  (secret)
-    buckets: { "acme-orders-exports-{env}": write }
-    publish: [orders-events]                     # roles/pubsub.publisher              (topic)
-    subscribe: [orders-email-sub]                # roles/pubsub.subscriber             (subscription)
-    bigquery_datasets: { orders_analytics: write }
-    project_roles: []                            # escape hatch, needs a reason in review
+# products/orders/jobs/nightly-export/deployment.yml
+env:
+  DB_URL: { secret: orders-db-url }            # accessor on this secret is granted automatically
+permissions:
+  secrets: [orders-api-key]                    # roles/secretmanager.secretAccessor  (secret)
+  buckets: { "acme-orders-exports-{env}": write }
+  publish: [orders-events]                     # roles/pubsub.publisher              (topic)
+  subscribe: [orders-email-sub]                # roles/pubsub.subscriber             (subscription)
+  bigquery_datasets: { orders_analytics: write }
+  project_roles: []                            # escape hatch, needs a reason in review
 ```
 
-| `access` key | Mode | Role | Scope |
+| `permissions` key | Mode | Role | Scope |
 |---|---|---|---|
 | `secrets` | n/a | `secretmanager.secretAccessor` | the secret |
 | `buckets` | `read` | `storage.objectViewer` | the bucket |
@@ -112,7 +115,8 @@ Cross-project resources take full IDs: `projects/shared/secrets/x`, `projects/p/
 
 Inside a product, the caller declares it: `calls: [backend]` gives the caller's SA
 `run.invoker` on `backend` and injects `BACKEND_URL`. A caller from outside the
-product goes in the target's `invokers: ["serviceAccount:…"]`. Unknown names fail the plan.
+product goes in the target's `permissions.invokers: ["serviceAccount:…"]`.
+Unknown names fail `cdk sync`.
 
 ### All IAM is additive
 
@@ -124,7 +128,7 @@ can't remove grants managed by other stacks.
 | | Owner | Where | Changes via |
 |---|---|---|---|
 | Projects, VPC, state buckets, Artifact Registry, Drone release SA, secret containers | Platform | foundation stack (not this kit), described in `platform.yaml` | Atlantis |
-| Components and their config: scaling, env, IAM, schedules, triggers | Product team | `products/<p>/product.yaml` | PR → Atlantis plan/apply |
+| Components and their config: scaling, env, IAM, schedules, triggers | Product team | `products/<p>/<section>/<name>/deployment.yml` | PR → Atlantis plan/apply |
 | Code | Product team | `products/<p>/<section>/<name>/` | merge → `cdk release dev`; `drone promote` → `cdk promote dev prod` |
 | CI/CD, Atlantis workflow, modules, templates, `cdk` | Platform | `platform/`, `tools/`, repo root | PR (CODEOWNERS routes review) |
 
@@ -143,8 +147,8 @@ applies never roll back a release, and releases never need an Atlantis run.
 
 ## 6. Repo rules
 
-1. **Product teams edit `product.yaml` and their component folders. Nothing else.**
-   `deploy/`, `atlantis.yaml`, `CODEOWNERS`, `pyrightconfig.json` and `platform/schema/` are
+1. **Product teams edit `product.yaml` and their component folders (code + `deployment.yml`). Nothing else.**
+   `deploy/` (incl. `<env>.tfvars.json`), `atlantis.yaml`, `CODEOWNERS`, `pyrightconfig.json` and `platform/schema/` are
    generated by `cdk sync`; the pre-commit hook regenerates them and CI runs `cdk sync --check`.
 2. **One component = one folder (`<section>/<name>/`) = one Dockerfile = one Cloud Run resource.** Functions
    included (Functions Framework container), so build, release and promotion work the same for every type.

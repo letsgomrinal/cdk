@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../../platform/schema/app.schema.json
+# Runtime config for orders/storefront. Every option and its default: docs/DEPLOYMENT_YML.md
+template: nextjs
+
+container:
+  port: 8080
+
+resources:
+  cpu: "1"
+  memory: 512Mi
+  startup_cpu_boost: true
+
+scaling:
+  min_instances: 0
+  max_instances: 20
+
+network:
+  ingress: all
+
+health:
+  startup: { http: /, period: 5s, failure_threshold: 12 }
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
+permissions:
+  public: true
+
+calls: [backend]              # BACKEND_URL is injected; storefront may invoke backend
+
+environments:
+  prod:
+    scaling: { min_instances: 1, max_instances: 50 }

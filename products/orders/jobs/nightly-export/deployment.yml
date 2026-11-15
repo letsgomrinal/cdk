@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../../../platform/schema/job.schema.json
+# Runtime config for orders/nightly-export. Every option and its default: docs/DEPLOYMENT_YML.md
+template: python-job
+
+container:
+  args: [export]
+
+resources:
+  cpu: "2"
+  memory: 2Gi
+
+execution:
+  tasks: 1
+  max_retries: 2
+  task_timeout: 3600s
+
+schedules:
+  daily: { cron: "0 2 * * *", time_zone: Europe/Berlin }
+
+env:
+  DB_URL: { secret: orders-db-url }
+
+permissions:
+  buckets: { "acme-orders-exports-{env}": write }
+  bigquery_datasets: { orders_analytics: write }

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../../../platform/schema/worker.schema.json
+# Runtime config for orders/email-sender. Every option and its default: docs/DEPLOYMENT_YML.md
+template: python-worker
+
+resources:
+  cpu: "1"
+  memory: 512Mi
+
+scaling:
+  instances: 1
+
+network:
+  egress: all-traffic         # talks to an external SMTP provider
+
+env:
+  SUBSCRIPTION: "projects/{project}/subscriptions/orders-email-requests"
+  SMTP_PASSWORD: { secret: orders-smtp-password, version: 3 }
+
+permissions:
+  subscribe: [orders-email-requests]
+  buckets: { acme-orders-templates: read }
+
+environments:
+  prod:
+    scaling: { instances: 4 }

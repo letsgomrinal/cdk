@@ -10,7 +10,10 @@
       "!**/.next",
       "!**/dist",
       "!**/.venv",
-      "!pyrightconfig.json"
+      "!pyrightconfig.json",
+      "!products/*/deploy",
+      "!**/*.yml",
+      "!**/*.yaml"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../../../platform/schema/function.schema.json
+#
+# Runtime config for __PRODUCT__/__NAME__ (function -> Cloud Run function + Eventarc).
+# Every option and its default: docs/DEPLOYMENT_YML.md
+template: python-function
+
+resources:
+  cpu: "1"
+  memory: 512Mi
+
+scaling:
+  max_instances: 10
+  # concurrency: 1            # events handled per instance at once
+
+# timeout: 300s
+
+triggers:
+  upload:
+    event_type: google.cloud.storage.object.v1.finalized
+    filters: { bucket: "__PRODUCT__-inbox-{env}" }
+  # events:
+  #   event_type: google.cloud.pubsub.topic.v1.messagePublished
+  #   pubsub_topic: "projects/{project}/topics/__PRODUCT__-events"
+
+# network:
+#   ingress: internal         # internal | load-balancer | all
+#   egress: private-ranges
+
+env:
+  LOG_LEVEL: info
+
+permissions:
+  buckets: { "__PRODUCT__-inbox-{env}": read }

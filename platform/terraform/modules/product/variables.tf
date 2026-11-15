@@ -31,11 +31,10 @@ variable "labels" {
 }
 
 variable "vpc" {
-  description = "Default Direct VPC egress for all workloads (a workload can opt out with use_vpc = false). Comes from the foundation layer."
+  description = "The env's network for Direct VPC egress (from platform.yaml). Each workload picks its egress mode, or NONE."
   type = object({
     network    = string
     subnetwork = string
-    egress     = optional(string, "PRIVATE_RANGES_ONLY")
   })
   default = null
 }
@@ -52,59 +51,73 @@ variable "deletion_protection" {
 }
 
 # ------------------------------------------------------------------------
-# Shared by every workload type (repeated in each object below, because
-# Terraform has no type inheritance):
-#
-#   image      : first image only; Drone owns the image after creation
-#   command, args, env, cpu, memory
-#   secret_env : ENV => "secret-id[:version]"; access is granted automatically
-#   access     : resource-level grants for this workload's SA (docs/IAM.md)
-#   use_vpc    : attach the product's VPC (default true)
+# Workloads by type. Usually produced by `cdk sync` from each component's
+# deployment.yml; the shared fields are repeated per type because Terraform
+# has no type inheritance. See the field comments in `services`.
 # ------------------------------------------------------------------------
 
 variable "services" {
-  description = "Workload name => spec. Names: 1-15 chars, [a-z][a-z0-9-]*, no trailing hyphen."
+  description = "Cloud Run services (apps, apis)."
+  type = map(object({
+    image      = optional(string)
+    command    = optional(list(string))
+    args       = optional(list(string))
+    env        = optional(map(string), {})
+    secret_env = optional(map(string), {})
+    cpu        = optional(string, "1")
+    memory     = optional(string, "512Mi")
+    egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
+    calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
+    access = optional(object({
+      secrets           = optional(list(string), [])
+      buckets           = optional(map(string), {})
+      publish           = optional(list(string), [])
+      subscribe         = optional(list(string), [])
+      bigquery_datasets = optional(map(string), {})
+      project_roles     = optional(list(string), [])
+    }), {})
+
+    port                  = optional(number, 8080)
+    ingress               = optional(string, "INGRESS_TRAFFIC_INTERNAL_ONLY")
+    min_instances         = optional(number, 0)
+    max_instances         = optional(number, 10)
+    concurrency           = optional(number, 80)
+    timeout               = optional(string, "300s")
+    cpu_idle              = optional(bool, true)  # CPU only while handling requests
+    startup_cpu_boost     = optional(bool, false) # extra CPU while starting
+    session_affinity      = optional(bool, false)
+    execution_environment = optional(string) # EXECUTION_ENVIRONMENT_GEN1 | _GEN2
+    startup_probe = optional(object({
+      http_path             = optional(string) # null = TCP check
+      port                  = optional(number) # default: the container port (8080 for worker pools)
+      initial_delay_seconds = optional(number, 0)
+      period_seconds        = optional(number, 10)
+      timeout_seconds       = optional(number, 1)
+      failure_threshold     = optional(number, 3)
+    }))
+    liveness_probe = optional(object({
+      http_path             = optional(string) # null = TCP check
+      port                  = optional(number) # default: the container port (8080 for worker pools)
+      initial_delay_seconds = optional(number, 0)
+      period_seconds        = optional(number, 10)
+      timeout_seconds       = optional(number, 1)
+      failure_threshold     = optional(number, 3)
+    }))
+    invokers = optional(list(string), []) # "job/reconcile" or IAM members
+  }))
+  default = {}
   validation {
     condition     = alltrue([for k in keys(var.services) : can(regex("^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$", k))])
     error_message = "services keys must be 1-15 chars, lowercase letters/digits/hyphens, starting with a letter, not ending with a hyphen."
   }
-  type = map(object({
-    image      = optional(string)
-    command    = optional(list(string))
-    args       = optional(list(string))
-    env        = optional(map(string), {})
-    secret_env = optional(map(string), {})
-    cpu        = optional(string, "1")
-    memory     = optional(string, "512Mi")
-    use_vpc    = optional(bool, true)
-    access = optional(object({
-      secrets           = optional(list(string), [])
-      buckets           = optional(map(string), {})
-      publish           = optional(list(string), [])
-      subscribe         = optional(list(string), [])
-      bigquery_datasets = optional(map(string), {})
-      project_roles     = optional(list(string), [])
-    }), {})
-
-    port          = optional(number, 8080)
-    ingress       = optional(string, "INGRESS_TRAFFIC_INTERNAL_ONLY")
-    min_instances = optional(number, 0)
-    max_instances = optional(number, 10)
-    concurrency   = optional(number, 80)
-    timeout       = optional(string, "300s")
-    cpu_idle      = optional(bool, true)
-    # Who may call this service: "job/reconcile" (same product) or IAM members.
-    invokers = optional(list(string), [])
-  }))
-  default = {}
+  validation {
+    condition     = alltrue([for w in values(var.services) : contains(["PRIVATE_RANGES_ONLY", "ALL_TRAFFIC", "NONE"], w.egress)])
+    error_message = "egress must be PRIVATE_RANGES_ONLY, ALL_TRAFFIC or NONE."
+  }
 }
 
 variable "jobs" {
-  description = "Workload name => spec. Names: 1-15 chars, [a-z][a-z0-9-]*, no trailing hyphen."
-  validation {
-    condition     = alltrue([for k in keys(var.jobs) : can(regex("^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$", k))])
-    error_message = "jobs keys must be 1-15 chars, lowercase letters/digits/hyphens, starting with a letter, not ending with a hyphen."
-  }
+  description = "Cloud Run jobs."
   type = map(object({
     image      = optional(string)
     command    = optional(list(string))
@@ -113,7 +126,8 @@ variable "jobs" {
     secret_env = optional(map(string), {})
     cpu        = optional(string, "1")
     memory     = optional(string, "512Mi")
-    use_vpc    = optional(bool, true)
+    egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
+    calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
     access = optional(object({
       secrets           = optional(list(string), [])
       buckets           = optional(map(string), {})
@@ -123,10 +137,11 @@ variable "jobs" {
       project_roles     = optional(list(string), [])
     }), {})
 
-    task_count  = optional(number, 1)
-    parallelism = optional(number, 1)
-    max_retries = optional(number, 1)
-    timeout     = optional(string, "600s")
+    task_count            = optional(number, 1)
+    parallelism           = optional(number, 0) # 0 = run all tasks at once
+    max_retries           = optional(number, 3)
+    timeout               = optional(string, "600s") # per task
+    execution_environment = optional(string)
     schedules = optional(map(object({
       cron      = string
       time_zone = optional(string, "Etc/UTC")
@@ -135,14 +150,18 @@ variable "jobs" {
     })), {})
   }))
   default = {}
+  validation {
+    condition     = alltrue([for k in keys(var.jobs) : can(regex("^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$", k))])
+    error_message = "jobs keys must be 1-15 chars, lowercase letters/digits/hyphens, starting with a letter, not ending with a hyphen."
+  }
+  validation {
+    condition     = alltrue([for w in values(var.jobs) : contains(["PRIVATE_RANGES_ONLY", "ALL_TRAFFIC", "NONE"], w.egress)])
+    error_message = "egress must be PRIVATE_RANGES_ONLY, ALL_TRAFFIC or NONE."
+  }
 }
 
 variable "worker_pools" {
-  description = "Workload name => spec. Names: 1-15 chars, [a-z][a-z0-9-]*, no trailing hyphen."
-  validation {
-    condition     = alltrue([for k in keys(var.worker_pools) : can(regex("^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$", k))])
-    error_message = "worker_pools keys must be 1-15 chars, lowercase letters/digits/hyphens, starting with a letter, not ending with a hyphen."
-  }
+  description = "Cloud Run worker pools."
   type = map(object({
     image      = optional(string)
     command    = optional(list(string))
@@ -151,7 +170,8 @@ variable "worker_pools" {
     secret_env = optional(map(string), {})
     cpu        = optional(string, "1")
     memory     = optional(string, "512Mi")
-    use_vpc    = optional(bool, true)
+    egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
+    calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
     access = optional(object({
       secrets           = optional(list(string), [])
       buckets           = optional(map(string), {})
@@ -162,22 +182,46 @@ variable "worker_pools" {
     }), {})
 
     instances = optional(number, 1)
+    startup_probe = optional(object({
+      http_path             = optional(string) # null = TCP check
+      port                  = optional(number) # default: the container port (8080 for worker pools)
+      initial_delay_seconds = optional(number, 0)
+      period_seconds        = optional(number, 10)
+      timeout_seconds       = optional(number, 1)
+      failure_threshold     = optional(number, 3)
+    }))
+    liveness_probe = optional(object({
+      http_path             = optional(string) # null = TCP check
+      port                  = optional(number) # default: the container port (8080 for worker pools)
+      initial_delay_seconds = optional(number, 0)
+      period_seconds        = optional(number, 10)
+      timeout_seconds       = optional(number, 1)
+      failure_threshold     = optional(number, 3)
+    }))
   }))
   default = {}
+  validation {
+    condition     = alltrue([for k in keys(var.worker_pools) : can(regex("^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$", k))])
+    error_message = "worker_pools keys must be 1-15 chars, lowercase letters/digits/hyphens, starting with a letter, not ending with a hyphen."
+  }
+  validation {
+    condition     = alltrue([for w in values(var.worker_pools) : contains(["PRIVATE_RANGES_ONLY", "ALL_TRAFFIC", "NONE"], w.egress)])
+    error_message = "egress must be PRIVATE_RANGES_ONLY, ALL_TRAFFIC or NONE."
+  }
 }
 
 variable "functions" {
-  description = "Workload name => spec. Names: 1-15 chars, [a-z][a-z0-9-]*, no trailing hyphen."
-  validation {
-    condition     = alltrue([for k in keys(var.functions) : can(regex("^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$", k))])
-    error_message = "functions keys must be 1-15 chars, lowercase letters/digits/hyphens, starting with a letter, not ending with a hyphen."
-  }
+  description = "Cloud Run functions (Functions Framework container + Eventarc triggers)."
   type = map(object({
+    image      = optional(string)
+    command    = optional(list(string))
+    args       = optional(list(string))
     env        = optional(map(string), {})
     secret_env = optional(map(string), {})
     cpu        = optional(string, "1")
     memory     = optional(string, "512Mi")
-    use_vpc    = optional(bool, true)
+    egress     = optional(string, "PRIVATE_RANGES_ONLY") # PRIVATE_RANGES_ONLY | ALL_TRAFFIC | NONE (no VPC)
+    calls      = optional(list(string), [])              # "service/backend": invoker grant + BACKEND_URL env
     access = optional(object({
       secrets           = optional(list(string), [])
       buckets           = optional(map(string), {})
@@ -201,4 +245,12 @@ variable "functions" {
     })), {})
   }))
   default = {}
+  validation {
+    condition     = alltrue([for k in keys(var.functions) : can(regex("^[a-z]([a-z0-9-]{0,13}[a-z0-9])?$", k))])
+    error_message = "functions keys must be 1-15 chars, lowercase letters/digits/hyphens, starting with a letter, not ending with a hyphen."
+  }
+  validation {
+    condition     = alltrue([for w in values(var.functions) : contains(["PRIVATE_RANGES_ONLY", "ALL_TRAFFIC", "NONE"], w.egress)])
+    error_message = "egress must be PRIVATE_RANGES_ONLY, ALL_TRAFFIC or NONE."
+  }
 }

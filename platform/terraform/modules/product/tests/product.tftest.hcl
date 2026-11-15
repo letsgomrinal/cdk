@@ -2,6 +2,9 @@
 #   cd modules/product && terraform init && terraform test
 
 mock_provider "google" {
+  mock_data "google_project" {
+    defaults = { number = "123456789" }
+  }
   mock_resource "google_service_account" {
     defaults = {
       name = "projects/p/serviceAccounts/mock@p.iam.gserviceaccount.com"
@@ -62,6 +65,54 @@ run "naming_and_identity" {
     condition     = length(google_cloud_run_v2_job_iam_member.deployers) == 1 && length(google_cloud_run_v2_worker_pool_iam_member.deployers) == 1
     error_message = "Deployers should get run.developer on each resource."
   }
+}
+
+run "calls_egress_and_runtime_options" {
+  command = plan
+
+  variables {
+    vpc = { network = "net", subnetwork = "sub" }
+    services = {
+      backend = {
+        egress            = "ALL_TRAFFIC"
+        startup_cpu_boost = true
+        startup_probe     = { http_path = "/healthz" }
+        liveness_probe    = { period_seconds = 30 }
+      }
+      web = { calls = ["service/backend"], egress = "NONE" }
+    }
+    jobs = {
+      sync = { calls = ["service/backend"], execution_environment = "EXECUTION_ENVIRONMENT_GEN2" }
+    }
+    worker_pools = {
+      mailer = { startup_probe = { http_path = "/ready", port = 9000 } }
+    }
+  }
+
+  assert {
+    condition     = local.env_for["service/web"]["BACKEND_URL"] == "https://orders-backend-svc-123456789.europe-west1.run.app"
+    error_message = "calls should inject <TARGET>_URL."
+  }
+  assert {
+    condition     = toset(local.invokers_of["service/backend"]) == toset(["service/web", "job/sync"])
+    error_message = "Callers should be granted run.invoker on the target."
+  }
+  assert {
+    condition     = local.vpc_for["service/web"] == null && local.vpc_for["service/backend"].egress == "ALL_TRAFFIC"
+    error_message = "Egress is per workload; NONE means no VPC."
+  }
+  assert {
+    condition     = local.vpc_for["worker-pool/mailer"].egress == "PRIVATE_RANGES_ONLY"
+    error_message = "Default egress is private ranges."
+  }
+}
+
+run "rejects_calls_to_non_http_targets" {
+  command = plan
+  variables {
+    jobs = { a = {}, b = { calls = ["job/a"] } }
+  }
+  expect_failures = [terraform_data.calls]
 }
 
 run "rejects_long_product" {

@@ -6,6 +6,7 @@
 #   dir       = products/<product>/deploy
 #   workspace = <env>    -> separate lock and planfile per env
 #
+# Inputs: <env>.tfvars.json (generated from product.yaml + every deployment.yml)
 # State: backend.<env>.hcl (generated) -> the env's bucket, prefix products/<product>,
 # Terraform's default workspace. The Atlantis workspace only names the env.
 
@@ -30,7 +31,7 @@ workflows:
             name: TF_WORKSPACE
             value: default
         - run: terraform init -input=false -reconfigure -backend-config=backend.$WORKSPACE.hcl
-        - run: terraform plan -input=false -lock-timeout=5m -var env=$WORKSPACE -out=$PLANFILE
+        - run: terraform plan -input=false -lock-timeout=5m -var-file=$WORKSPACE.tfvars.json -out=$PLANFILE
         - run: terraform show -no-color $PLANFILE > $SHOWFILE
     apply:
       steps:

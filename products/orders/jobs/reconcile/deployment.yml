@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../../../platform/schema/job.schema.json
+# Runtime config for orders/reconcile. Every option and its default: docs/DEPLOYMENT_YML.md
+template: python-job
+
+resources:
+  cpu: "1"
+  memory: 512Mi
+
+execution:
+  tasks: 4
+  parallelism: 2
+  task_timeout: 900s
+
+schedules:
+  hourly: { cron: "15 * * * *" }
+  weekly: { cron: "0 4 * * 0", args: [--full] }
+
+calls: [backend]
